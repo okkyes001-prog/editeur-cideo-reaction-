@@ -13,8 +13,8 @@
   #root {
     height: 100%;
     font-family: var(--font-sans);
-    background-color: #09090b;
-    color: #f4f4f5;
+    background-color: #090909;
+    color: #ffffff;
   }
 
   h1,
@@ -37,16 +37,16 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #0c0c0f;
+  background: #090909;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #27272f;
+  background: #262626;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3f3f4a;
+  background: #888888;
 }
 
 /* Tactile precision range slider */
@@ -60,7 +60,7 @@ input[type='range'] {
 input[type='range']::-webkit-slider-runnable-track {
   height: 3px;
   border-radius: 2px;
-  background: #27272f;
+  background: #262626;
 }
 
 input[type='range']::-webkit-slider-thumb {
@@ -69,8 +69,8 @@ input[type='range']::-webkit-slider-thumb {
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  background: #f4f4f5;
-  border: 2px solid #f97316;
+  background: #ffffff;
+  border: 2px solid #C8FF00;
   margin-top: -4px;
   transition: transform 0.12s ease;
 }
@@ -81,7 +81,8 @@ input[type='range']::-webkit-slider-thumb:hover {
 
 /* Subtle dot grid for center stage */
 .studio-stage-bg {
-  background-color: #070709;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-color: #090909;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
   background-size: 20px 20px;
 }
+

@@ -136,9 +136,9 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
   ];
 
   return (
-    <aside className="flex h-full shrink-0 border-r border-[#22222A] bg-[#0F0F13]">
+    <aside className="flex h-full shrink-0 border-r border-[#262626] bg-[#090909]">
       {/* Sleek Full-Height Icon Rail */}
-      <div className="w-[56px] border-r border-[#22222A] flex flex-col items-center py-2.5 gap-1.5">
+      <div className="w-[56px] border-r border-[#262626] flex flex-col items-center py-2.5 gap-1.5">
         {railItems.map((item) => {
           const active = activeTab === item.id && isDrawerOpen;
           return (
@@ -155,11 +155,11 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
               }}
               className={`w-11 py-2 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer ${
                 active
-                  ? 'bg-[#1B1B22] text-white'
-                  : 'text-[#71717A] hover:text-[#E4E4E7] hover:bg-[#15151B]'
+                  ? 'bg-[#191919] text-white'
+                  : 'text-[#888888] hover:text-white hover:bg-[#191919]'
               }`}
             >
-              <span className={active ? 'text-[#F97316]' : ''}>
+              <span className={active ? 'text-[#C8FF00]' : ''}>
                 {item.icon}
               </span>
               <span className="text-[10px] font-medium leading-none">
@@ -172,8 +172,8 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
 
       {/* Collapsible Contextual Asset Drawer */}
       {isDrawerOpen && (
-      <div className="w-[264px] flex flex-col min-h-0">
-        <div className="px-3.5 py-2.5 border-b border-[#22222A] flex items-center justify-between">
+      <div className="w-[264px] flex flex-col min-h-0 bg-[#191919]">
+        <div className="px-3.5 py-2.5 border-b border-[#262626] flex items-center justify-between">
           <h2 className="font-display text-xs font-semibold text-white tracking-wide">
             {activeTab === 'videos'
               ? 'Viral & Reaction'
@@ -191,7 +191,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
             type="button"
             onClick={() => setIsDrawerOpen(false)}
             title="Collapse panel"
-            className="p-1 rounded text-[#71717A] hover:text-white hover:bg-[#1B1B22] transition-colors cursor-pointer"
+            className="p-1 rounded text-[#888888] hover:text-white hover:bg-[#262626] transition-colors cursor-pointer"
           >
             <PanelLeftClose className="w-3.5 h-3.5" />
           </button>
@@ -230,18 +230,18 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                   }}
                   className={`flex flex-col items-center justify-center gap-1.5 py-2.5 px-2 rounded-lg border text-center transition-colors cursor-pointer ${
                     dragOverTrack === 'base'
-                      ? 'bg-[#F97316]/15 border-[#F97316]'
-                      : 'bg-[#14141A] border-[#27272F] hover:border-[#F97316]'
+                      ? 'bg-[#C8FF00]/15 border-[#C8FF00]'
+                      : 'bg-[#090909] border-[#262626] hover:border-[#C8FF00]'
                   }`}
                 >
-                  <div className="w-7 h-7 rounded-md bg-[#1D1D25] flex items-center justify-center text-[#F97316]">
+                  <div className="w-7 h-7 rounded-md bg-[#262626] flex items-center justify-center text-[#C8FF00]">
                     <Upload className="w-3.5 h-3.5" />
                   </div>
                   <div>
                     <p className="text-[11px] font-semibold text-white leading-tight">
                       Viral (V1)
                     </p>
-                    <p className="text-[10px] text-[#71717A]">
+                    <p className="text-[10px] text-[#888888]">
                       Drop or click
                     </p>
                   </div>
@@ -276,38 +276,38 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                   }}
                   className={`flex flex-col items-center justify-center gap-1.5 py-2.5 px-2 rounded-lg border text-center transition-colors cursor-pointer ${
                     dragOverTrack === 'overlay'
-                      ? 'bg-[#06B6D4]/15 border-[#06B6D4]'
-                      : 'bg-[#14141A] border-[#27272F] hover:border-[#06B6D4]'
+                      ? 'bg-[#C8FF00]/15 border-[#C8FF00]'
+                      : 'bg-[#090909] border-[#262626] hover:border-[#C8FF00]'
                   }`}
                 >
-                  <div className="w-7 h-7 rounded-md bg-[#1D1D25] flex items-center justify-center text-[#06B6D4]">
+                  <div className="w-7 h-7 rounded-md bg-[#262626] flex items-center justify-center text-[#C8FF00]">
                     <Plus className="w-3.5 h-3.5" />
                   </div>
                   <div>
                     <p className="text-[11px] font-semibold text-white leading-tight">
                       Reaction (V2)
                     </p>
-                    <p className="text-[10px] text-[#71717A]">
+                    <p className="text-[10px] text-[#888888]">
                       Drop or click
                     </p>
                   </div>
                 </button>
               </div>
 
-              <div className="space-y-2 pt-2 border-t border-[#22222A]">
+              <div className="space-y-2 pt-2 border-t border-[#262626]">
                 <div className="flex items-center justify-between">
-                  <p className="text-[11px] font-medium text-[#A1A1AA]">
+                  <p className="text-[11px] font-medium text-[#888888]">
                     Clip Library
                   </p>
                   {assets.length > 0 && (
-                    <span className="text-[10px] font-mono-tabular text-[#71717A]">
+                    <span className="text-[10px] font-mono-tabular text-[#888888]">
                       {assets.length}
                     </span>
                   )}
                 </div>
 
                 {assets.length === 0 ? (
-                  <p className="text-[11px] text-[#71717A] py-2">
+                  <p className="text-[11px] text-[#888888] py-2">
                     Your uploaded videos will appear here in compact tiles.
                   </p>
                 ) : (
@@ -315,9 +315,9 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                     {assets.map((asset) => (
                       <div
                         key={asset.id}
-                        className="bg-[#14141A] border border-[#22222A] rounded-md p-1.5 space-y-1.5"
+                        className="bg-[#090909] border border-[#262626] rounded-md p-1.5 space-y-1.5"
                       >
-                        <div className="relative h-12 rounded bg-[#09090B] border border-[#27272F] overflow-hidden flex items-center justify-center">
+                        <div className="relative h-12 rounded bg-[#090909] border border-[#262626] overflow-hidden flex items-center justify-center">
                           {asset.thumbnailUrl ? (
                             <img
                               src={asset.thumbnailUrl}
@@ -326,7 +326,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                               className="w-full h-full object-cover"
                             />
                           ) : (
-                            <Film className="w-3.5 h-3.5 text-[#52525B]" />
+                            <Film className="w-3.5 h-3.5 text-[#888888]" />
                           )}
                           <span className="absolute bottom-0.5 right-1 px-1 rounded bg-black/75 text-[9px] font-mono-tabular text-white">
                             {asset.duration.toFixed(1)}s
@@ -339,7 +339,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                           <button
                             type="button"
                             onClick={() => onAddClipToTrack(asset, 'base')}
-                            className="py-1 rounded bg-[#1D1D25] hover:bg-[#F97316] text-[10px] font-semibold text-white transition-colors cursor-pointer"
+                            className="py-1 rounded bg-[#262626] hover:bg-[#C8FF00] hover:text-[#090909] text-[10px] font-semibold text-white transition-colors cursor-pointer"
                             title="Add to Viral track (V1)"
                           >
                             + V1
@@ -347,7 +347,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                           <button
                             type="button"
                             onClick={() => onAddClipToTrack(asset, 'overlay')}
-                            className="py-1 rounded bg-[#18262B] hover:bg-[#0891B2] text-[10px] font-semibold text-white transition-colors cursor-pointer"
+                            className="py-1 rounded bg-[#262626] hover:bg-[#C8FF00] hover:text-[#090909] text-[10px] font-semibold text-white transition-colors cursor-pointer"
                             title="Add to Reaction track (V2)"
                           >
                             + V2
@@ -366,10 +366,10 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
               {/* Sleek Segmented Aspect Ratio */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-medium text-[#A1A1AA]">
+                  <span className="text-[11px] font-medium text-[#888888]">
                     Ratio
                   </span>
-                  <span className="text-[10px] text-[#71717A]">
+                  <span className="text-[10px] text-[#888888]">
                     {aspectRatio === '9:16'
                       ? 'Reels / TikTok'
                       : aspectRatio === '1:1'
@@ -377,7 +377,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                       : 'YouTube Wide'}
                   </span>
                 </div>
-                <div className="bg-[#09090B] border border-[#22222A] rounded-lg p-0.5 grid grid-cols-3 gap-0.5">
+                <div className="bg-[#090909] border border-[#262626] rounded-lg p-0.5 grid grid-cols-3 gap-0.5">
                   {(
                     [
                       { id: '9:16', box: 'w-2 h-3' },
@@ -393,13 +393,13 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                         onClick={() => onAspectRatioChange(item.id)}
                         className={`py-1.5 rounded-md flex items-center justify-center gap-1.5 text-[11px] font-mono-tabular font-medium transition-colors cursor-pointer ${
                           active
-                            ? 'bg-[#F97316] text-white font-semibold'
-                            : 'text-[#A1A1AA] hover:text-white hover:bg-[#14141A]'
+                            ? 'bg-[#C8FF00] text-[#090909] font-bold'
+                            : 'text-[#888888] hover:text-white hover:bg-[#090909]'
                         }`}
                       >
                         <span
                           className={`rounded-[2px] border ${item.box} ${
-                            active ? 'border-white' : 'border-current'
+                            active ? 'border-[#090909]' : 'border-current'
                           }`}
                         />
                         <span>{item.id}</span>

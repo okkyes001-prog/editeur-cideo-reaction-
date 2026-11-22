@@ -153,15 +153,15 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
   }
 
   return (
-    <section className="h-[214px] shrink-0 bg-[#0F0F13] border-t border-[#22222A] flex flex-col select-none">
+    <section className="h-[214px] shrink-0 bg-[#191919] border-t border-[#262626] flex flex-col select-none">
       {/* Compact Timeline Toolbar */}
-      <div className="h-8 px-3.5 border-b border-[#22222A] flex items-center justify-between gap-4 shrink-0">
+      <div className="h-8 px-3.5 border-b border-[#262626] flex items-center justify-between gap-4 shrink-0">
         <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={onSplitAtPlayhead}
             title="Split clip at playhead (S)"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#16161C] hover:bg-[#1F1F27] border border-[#27272F] text-[11px] font-medium text-[#E4E4E7] transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#090909] hover:bg-[#262626] border border-[#262626] text-[11px] font-medium text-white transition-colors cursor-pointer"
           >
             <Scissors className="w-3 h-3" />
             <span>Split</span>
@@ -172,7 +172,7 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
             onClick={onDeleteSelected}
             disabled={!selection}
             title="Delete selected item (Del)"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#16161C] hover:bg-[#1F1F27] border border-[#27272F] text-[11px] font-medium text-[#E4E4E7] disabled:opacity-35 disabled:pointer-events-none transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#090909] hover:bg-[#262626] border border-[#262626] text-[11px] font-medium text-white disabled:opacity-35 disabled:pointer-events-none transition-colors cursor-pointer"
           >
             <Trash2 className="w-3 h-3" />
             <span>Delete</span>
@@ -180,26 +180,26 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="hidden sm:inline text-[10px] font-mono-tabular text-[#71717A]">
+          <span className="hidden sm:inline text-[10px] font-mono-tabular text-[#888888]">
             Drag clips · Trim edges
           </span>
-          <div className="flex items-center gap-1 bg-[#14141A] border border-[#22222A] rounded px-1 py-0.5">
+          <div className="flex items-center gap-1 bg-[#090909] border border-[#262626] rounded px-1 py-0.5">
             <button
               type="button"
               onClick={() => setPxPerSec((z) => Math.max(18, z - 12))}
               title="Zoom out timeline"
-              className="p-0.5 text-[#A1A1AA] hover:text-white cursor-pointer"
+              className="p-0.5 text-[#888888] hover:text-white cursor-pointer"
             >
               <ZoomOut className="w-3 h-3" />
             </button>
-            <span className="text-[10px] font-mono-tabular text-[#A1A1AA] w-8 text-center">
+            <span className="text-[10px] font-mono-tabular text-[#888888] w-8 text-center">
               {Math.round((pxPerSec / 48) * 100)}%
             </span>
             <button
               type="button"
               onClick={() => setPxPerSec((z) => Math.min(96, z + 12))}
               title="Zoom in timeline"
-              className="p-0.5 text-[#A1A1AA] hover:text-white cursor-pointer"
+              className="p-0.5 text-[#888888] hover:text-white cursor-pointer"
             >
               <ZoomIn className="w-3 h-3" />
             </button>
@@ -209,29 +209,29 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
 
       {/* Track Labels + Multi-Track Lanes */}
       <div className="flex-1 min-h-0 flex">
-        <div className="w-24 shrink-0 border-r border-[#22222A] bg-[#0B0B0E] flex flex-col">
-          <div className="h-5 border-b border-[#22222A] px-2.5 flex items-center text-[9px] font-mono-tabular text-[#71717A]">
+        <div className="w-24 shrink-0 border-r border-[#262626] bg-[#141414] flex flex-col">
+          <div className="h-5 border-b border-[#262626] px-2.5 flex items-center text-[9px] font-mono-tabular text-[#888888]">
             TRACKS
           </div>
           <div className="flex-1 flex flex-col justify-evenly px-2 py-0.5 gap-0.5">
-            <div className="h-6 flex items-center gap-1.5 text-[11px] text-[#E4E4E7]">
-              <Type className="w-3 h-3 text-[#FACC15] shrink-0" />
+            <div className="h-6 flex items-center gap-1.5 text-[11px] text-white">
+              <Type className="w-3 h-3 text-[#C8FF00] shrink-0" />
               <span className="truncate">Text</span>
             </div>
-            <div className="h-6 flex items-center gap-1.5 text-[11px] text-[#E4E4E7]">
-              <Layers className="w-3 h-3 text-[#06B6D4] shrink-0" />
+            <div className="h-6 flex items-center gap-1.5 text-[11px] text-white">
+              <Layers className="w-3 h-3 text-[#C8FF00] shrink-0" />
               <span className="truncate">Reaction</span>
             </div>
-            <div className="h-6 flex items-center gap-1.5 text-[11px] text-[#E4E4E7]">
-              <Video className="w-3 h-3 text-[#F97316] shrink-0" />
+            <div className="h-6 flex items-center gap-1.5 text-[11px] text-white">
+              <Video className="w-3 h-3 text-[#C8FF00] shrink-0" />
               <span className="truncate">Viral</span>
             </div>
-            <div className="h-6 flex items-center gap-1.5 text-[11px] text-[#E4E4E7]">
-              <Volume2 className="w-3 h-3 text-[#10B981] shrink-0" />
+            <div className="h-6 flex items-center gap-1.5 text-[11px] text-white">
+              <Volume2 className="w-3 h-3 text-[#C8FF00] shrink-0" />
               <span className="truncate">SFX</span>
             </div>
-            <div className="h-6 flex items-center gap-1.5 text-[11px] text-[#E4E4E7]">
-              <Music className="w-3 h-3 text-[#A855F7] shrink-0" />
+            <div className="h-6 flex items-center gap-1.5 text-[11px] text-white">
+              <Music className="w-3 h-3 text-[#C8FF00] shrink-0" />
               <span className="truncate">Music</span>
             </div>
           </div>
@@ -239,7 +239,7 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
 
         <div
           ref={trackContainerRef}
-          className="flex-1 min-w-0 overflow-x-auto overflow-y-hidden relative bg-[#09090B]"
+          className="flex-1 min-w-0 overflow-x-auto overflow-y-hidden relative bg-[#090909]"
         >
           <div
             style={{ width: totalTimelineWidth }}
@@ -248,7 +248,7 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
             {/* Scrubbable Ruler */}
             <div
               onPointerDown={handleRulerPointerDown}
-              className="h-5 border-b border-[#22222A] bg-[#0F0F13] relative cursor-ew-resize shrink-0"
+              className="h-5 border-b border-[#262626] bg-[#191919] relative cursor-ew-resize shrink-0"
             >
               {ticks.map((sec) => (
                 <div
@@ -256,10 +256,10 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
                   style={{ left: sec * pxPerSec }}
                   className="absolute top-0 bottom-0 flex flex-col justify-end pointer-events-none"
                 >
-                  <span className="text-[9px] font-mono-tabular text-[#71717A] pl-1 leading-none mb-0.5">
+                  <span className="text-[9px] font-mono-tabular text-[#888888] pl-1 leading-none mb-0.5">
                     {sec}s
                   </span>
-                  <div className="w-px h-1 bg-[#27272F]" />
+                  <div className="w-px h-1 bg-[#262626]" />
                 </div>
               ))}
             </div>
@@ -551,12 +551,12 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
               </div>
             </div>
 
-            {/* Signal Coral Playhead Needle */}
+            {/* Signal Electric Lime Playhead Needle */}
             <div
               style={{ left: currentTime * pxPerSec }}
-              className="absolute top-0 bottom-0 w-px bg-[#F97316] pointer-events-none z-20"
+              className="absolute top-0 bottom-0 w-px bg-[#C8FF00] pointer-events-none z-20"
             >
-              <div className="w-2.5 h-2.5 bg-[#F97316] -translate-x-1/2 rotate-45 -mt-0.5 rounded-[1px]" />
+              <div className="w-2.5 h-2.5 bg-[#C8FF00] -translate-x-1/2 rotate-45 -mt-0.5 rounded-[1px]" />
             </div>
           </div>
         </div>

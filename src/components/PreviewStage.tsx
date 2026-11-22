@@ -769,8 +769,8 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
         <div
           className={`relative rounded-xl overflow-hidden border bg-black shadow-2xl flex items-center justify-center transition-colors ${aspectStyle} ${
             isFileDragOver
-              ? 'border-[#F97316] ring-2 ring-[#F97316]/40'
-              : 'border-[#27272F]'
+              ? 'border-[#C8FF00] ring-2 ring-[#C8FF00]/40'
+              : 'border-[#262626]'
           }`}
         >
           <canvas
@@ -785,7 +785,7 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
           />
 
           {baseClips.length === 0 && overlayClips.length === 0 && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center p-5 text-center bg-[#09090B]/90">
+            <div className="absolute inset-0 flex flex-col items-center justify-center p-5 text-center bg-[#090909]/90">
               <input
                 ref={emptyViralInputRef}
                 type="file"
@@ -814,7 +814,7 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
               <p className="font-display text-sm font-semibold text-white">
                 Drop your videos to start
               </p>
-              <p className="text-[11px] text-[#71717A] mt-1 mb-4 max-w-[210px]">
+              <p className="text-[11px] text-[#888888] mt-1 mb-4 max-w-[210px]">
                 Add a main viral clip and a reaction video to auto-build your split edit.
               </p>
 
@@ -822,7 +822,7 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
                 <button
                   type="button"
                   onClick={() => emptyViralInputRef.current?.click()}
-                  className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-[#F97316] hover:bg-[#EA580C] text-xs font-semibold text-white transition-colors cursor-pointer"
+                  className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-[#C8FF00] hover:bg-[#b5e600] text-xs font-bold text-[#090909] transition-colors cursor-pointer"
                 >
                   <Upload className="w-3.5 h-3.5" />
                   <span>Import Viral Video</span>
@@ -830,9 +830,9 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
                 <button
                   type="button"
                   onClick={() => emptyReactionInputRef.current?.click()}
-                  className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-[#14141A] border border-[#27272F] hover:border-[#06B6D4] text-xs font-semibold text-white transition-colors cursor-pointer"
+                  className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-[#191919] border border-[#262626] hover:border-[#C8FF00] text-xs font-semibold text-white transition-colors cursor-pointer"
                 >
-                  <Plus className="w-3.5 h-3.5 text-[#06B6D4]" />
+                  <Plus className="w-3.5 h-3.5 text-[#C8FF00]" />
                   <span>Add Reaction Video</span>
                 </button>
               </div>
@@ -842,13 +842,13 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
       </div>
 
       {/* Compact Playback Bar */}
-      <div className="w-full max-w-md mt-2 bg-[#0F0F13] border border-[#22222A] rounded-lg px-3 py-1 flex items-center justify-between gap-3 shrink-0">
+      <div className="w-full max-w-md mt-2 bg-[#191919] border border-[#262626] rounded-lg px-3 py-1 flex items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => onSeek(0)}
             title="Restart"
-            className="p-1.5 rounded text-[#A1A1AA] hover:text-white hover:bg-[#1B1B22] transition-colors cursor-pointer"
+            className="p-1.5 rounded text-[#888888] hover:text-white hover:bg-[#262626] transition-colors cursor-pointer"
           >
             <SkipBack className="w-3.5 h-3.5" />
           </button>
@@ -856,7 +856,7 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
             type="button"
             onClick={onTogglePlay}
             title="Play / Pause (Space)"
-            className="w-7 h-7 rounded-full bg-white hover:bg-[#E4E4E7] text-[#09090B] flex items-center justify-center transition-colors cursor-pointer"
+            className="w-7 h-7 rounded-full bg-[#C8FF00] hover:bg-[#b5e600] text-[#090909] flex items-center justify-center transition-colors cursor-pointer font-bold"
           >
             {isPlaying ? (
               <Pause className="w-3.5 h-3.5 fill-current" />
@@ -866,12 +866,12 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
           </button>
         </div>
 
-        <div className="font-mono-tabular text-xs text-[#E4E4E7] flex items-center gap-1.5">
+        <div className="font-mono-tabular text-xs text-white flex items-center gap-1.5">
           <span className="text-white font-medium">
             {formatTimecode(currentTime)}
           </span>
-          <span className="text-[#52525B]">/</span>
-          <span className="text-[#A1A1AA]">{formatTimecode(duration)}</span>
+          <span className="text-[#888888]">/</span>
+          <span className="text-[#888888]">{formatTimecode(duration)}</span>
         </div>
 
         <div className="flex items-center gap-1">
@@ -879,7 +879,7 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
             type="button"
             onClick={onSplitAtPlayhead}
             title="Split clip (S)"
-            className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-[#A1A1AA] hover:text-white hover:bg-[#1B1B22] transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-[#888888] hover:text-white hover:bg-[#262626] transition-colors cursor-pointer"
           >
             <Scissors className="w-3.5 h-3.5" />
             <span>Split</span>
@@ -892,8 +892,8 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
               title="Toggle 9:16 Safe Zone guide"
               className={`p-1.5 rounded transition-colors cursor-pointer ${
                 showSafeZone
-                  ? 'text-[#F97316] bg-[#1B1B22]'
-                  : 'text-[#71717A] hover:text-white hover:bg-[#1B1B22]'
+                  ? 'text-[#C8FF00] bg-[#262626]'
+                  : 'text-[#888888] hover:text-white hover:bg-[#262626]'
               }`}
             >
               <Smartphone className="w-3.5 h-3.5" />
@@ -906,8 +906,8 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
             title="Loop playback"
             className={`p-1.5 rounded transition-colors cursor-pointer ${
               isLooping
-                ? 'text-[#F97316] bg-[#1B1B22]'
-                : 'text-[#71717A] hover:text-white hover:bg-[#1B1B22]'
+                ? 'text-[#C8FF00] bg-[#262626]'
+                : 'text-[#888888] hover:text-white hover:bg-[#262626]'
             }`}
           >
             <Repeat className="w-3.5 h-3.5" />

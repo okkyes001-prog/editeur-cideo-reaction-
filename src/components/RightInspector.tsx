@@ -101,10 +101,10 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
     (!selectedClip && !selectedText && !selectedSfx && !selectedMusic)
   ) {
     return (
-      <aside className="w-[256px] shrink-0 bg-[#0F0F13] border-l border-[#22222A] flex flex-col min-h-0">
-        <div className="px-4 py-3 border-b border-[#22222A] flex items-center justify-between">
+      <aside className="w-[256px] shrink-0 bg-[#191919] border-l border-[#262626] flex flex-col min-h-0">
+        <div className="px-4 py-3 border-b border-[#262626] flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Sliders className="w-4 h-4 text-[#F97316]" />
+            <Sliders className="w-4 h-4 text-[#C8FF00]" />
             <h2 className="font-display text-sm font-semibold text-white">
               Split Line
             </h2>
@@ -115,10 +115,10 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
               onClick={() =>
                 onUpdateSeamDivider({ enabled: !seamDivider.enabled })
               }
-              className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors cursor-pointer ${
+              className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors cursor-pointer ${
                 seamDivider.enabled
-                  ? 'bg-[#F97316] text-white'
-                  : 'bg-[#1B1B22] text-[#A1A1AA] hover:text-white'
+                  ? 'bg-[#C8FF00] text-[#090909]'
+                  : 'bg-[#262626] text-[#888888] hover:text-white'
               }`}
             >
               {seamDivider.enabled ? 'ON' : 'OFF'}
@@ -130,7 +130,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
           {onUpdateSeamDivider && (
             <>
               <div className="space-y-2">
-                <p className="text-[11px] font-medium text-[#A1A1AA]">
+                <p className="text-[11px] font-medium text-[#888888]">
                   Style Presets
                 </p>
                 <div className="grid grid-cols-2 gap-1.5">
@@ -157,8 +157,8 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                         }
                         className={`rounded-lg p-2 border text-left transition-colors cursor-pointer space-y-1.5 ${
                           active
-                            ? 'bg-[#1B1B22] border-[#F97316]'
-                            : 'bg-[#14141A] border-[#22222A] hover:border-[#3F3F46]'
+                            ? 'bg-[#222222] border-[#C8FF00]'
+                            : 'bg-[#090909] border-[#262626] hover:border-[#333333]'
                         }`}
                       >
                         <div
@@ -177,11 +177,11 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
               </div>
 
               {seamDivider.enabled && (
-                <div className="space-y-3 pt-3 border-t border-[#22222A]">
+                <div className="space-y-3 pt-3 border-t border-[#262626]">
                   <div>
                     <div className="flex justify-between text-[11px] mb-1">
-                      <span className="text-[#A1A1AA]">Blur</span>
-                      <span className="font-mono-tabular text-[#E4E4E7]">
+                      <span className="text-[#888888]">Blur</span>
+                      <span className="font-mono-tabular text-white">
                         {seamDivider.blurAmount}px
                       </span>
                     </div>
@@ -201,8 +201,8 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
 
                   <div>
                     <div className="flex justify-between text-[11px] mb-1">
-                      <span className="text-[#A1A1AA]">Height</span>
-                      <span className="font-mono-tabular text-[#E4E4E7]">
+                      <span className="text-[#888888]">Height</span>
+                      <span className="font-mono-tabular text-white">
                         {seamDivider.thickness}%
                       </span>
                     </div>
@@ -222,8 +222,8 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
 
                   <div>
                     <div className="flex justify-between text-[11px] mb-1">
-                      <span className="text-[#A1A1AA]">Position</span>
-                      <span className="font-mono-tabular text-[#E4E4E7]">
+                      <span className="text-[#888888]">Position</span>
+                      <span className="font-mono-tabular text-white">
                         {seamDivider.positionY}%
                       </span>
                     </div>
@@ -243,8 +243,8 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
 
                   <div>
                     <div className="flex justify-between text-[11px] mb-1">
-                      <span className="text-[#A1A1AA]">Color Fade</span>
-                      <span className="font-mono-tabular text-[#E4E4E7]">
+                      <span className="text-[#888888]">Color Fade</span>
+                      <span className="font-mono-tabular text-white">
                         {Math.round(seamDivider.opacity * 100)}%
                       </span>
                     </div>
@@ -263,7 +263,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                   </div>
 
                   <div className="flex items-center justify-between pt-1">
-                    <span className="text-[11px] text-[#A1A1AA]">Colors</span>
+                    <span className="text-[11px] text-[#888888]">Colors</span>
                     <div className="flex items-center gap-2">
                       <input
                         type="color"
@@ -271,7 +271,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                         onChange={(e) =>
                           onUpdateSeamDivider({ color: e.target.value })
                         }
-                        className="w-7 h-6 rounded border border-[#27272F] bg-transparent cursor-pointer"
+                        className="w-7 h-6 rounded border border-[#262626] bg-transparent cursor-pointer"
                       />
                       <input
                         type="color"
@@ -279,7 +279,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                         onChange={(e) =>
                           onUpdateSeamDivider({ secondaryColor: e.target.value })
                         }
-                        className="w-7 h-6 rounded border border-[#27272F] bg-transparent cursor-pointer"
+                        className="w-7 h-6 rounded border border-[#262626] bg-transparent cursor-pointer"
                       />
                     </div>
                   </div>
@@ -288,9 +288,9 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
             </>
           )}
 
-          <div className="pt-3 border-t border-[#22222A] text-center space-y-1">
-            <Layers className="w-4 h-4 text-[#3F3F46] mx-auto" />
-            <p className="text-[11px] text-[#71717A] leading-relaxed">
+          <div className="pt-3 border-t border-[#262626] text-center space-y-1">
+            <Layers className="w-4 h-4 text-[#888888] mx-auto" />
+            <p className="text-[11px] text-[#888888] leading-relaxed">
               Click any video, text, or audio on canvas or timeline to edit its
               properties.
             </p>
@@ -301,24 +301,10 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   }
 
   return (
-    <aside className="w-[256px] shrink-0 bg-[#0F0F13] border-l border-[#22222A] flex flex-col min-h-0">
-      <div className="px-4 py-3 border-b border-[#22222A] flex items-center justify-between">
+    <aside className="w-[256px] shrink-0 bg-[#191919] border-l border-[#262626] flex flex-col min-h-0">
+      <div className="px-4 py-3 border-b border-[#262626] flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
-          {selectedClip ? (
-            <Layers
-              className={`w-4 h-4 shrink-0 ${
-                selectedClip.track === 'overlay'
-                  ? 'text-[#06B6D4]'
-                  : 'text-[#F97316]'
-              }`}
-            />
-          ) : selectedText ? (
-            <Type className="w-4 h-4 text-[#FACC15] shrink-0" />
-          ) : selectedMusic ? (
-            <Music className="w-4 h-4 text-[#A855F7] shrink-0" />
-          ) : (
-            <Volume2 className="w-4 h-4 text-[#10B981] shrink-0" />
-          )}
+          <Layers className="w-4 h-4 text-[#C8FF00] shrink-0" />
           <h2 className="font-display text-sm font-semibold text-white truncate">
             {selectedClip
               ? selectedClip.track === 'overlay'
@@ -336,7 +322,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
           type="button"
           onClick={onDeleteSelected}
           title="Delete selected"
-          className="p-1.5 rounded text-[#A1A1AA] hover:text-[#EF4444] hover:bg-[#1B1B22] transition-colors cursor-pointer"
+          className="p-1.5 rounded text-[#888888] hover:text-[#EF4444] hover:bg-[#262626] transition-colors cursor-pointer"
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>
