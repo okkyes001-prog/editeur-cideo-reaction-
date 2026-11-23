@@ -259,7 +259,14 @@ async function scheduleClipAudioWithMediabunny(
     src.buffer = stitched;
     src.playbackRate.value = speed;
     const gain = offlineCtx.createGain();
-    gain.gain.value = Math.max(0, Math.min(1, clip.volume));
+    applyAudioFadeEnvelope(
+      gain.gain,
+      Math.max(0, Math.min(1, clip.volume)),
+      Math.max(0, clip.startTime),
+      Math.max(0.05, clip.duration),
+      clip.fadeIn,
+      clip.fadeOut
+    );
     src.connect(gain);
     gain.connect(offlineCtx.destination);
     src.start(Math.max(0, clip.startTime), 0, Math.max(0.05, clip.duration));
@@ -275,6 +282,38 @@ async function scheduleClipAudioWithMediabunny(
         // Ignore
       }
     }
+  }
+}
+
+function applyAudioFadeEnvelope(
+  gainParam: AudioParam,
+  baseVolume: number,
+  startTime: number,
+  clipDuration: number,
+  fadeIn = 0,
+  fadeOut = 0
+): void {
+  const safeVol = Math.max(0, Math.min(1.5, baseVolume));
+  const safeIn = Math.max(0, Math.min(clipDuration * 0.8, fadeIn));
+  const safeOut = Math.max(0, Math.min(clipDuration * 0.8, fadeOut));
+  const endTime = startTime + clipDuration;
+
+  if (safeIn <= 0.02 && safeOut <= 0.02) {
+    gainParam.setValueAtTime(safeVol, startTime);
+    return;
+  }
+
+  if (safeIn > 0.02) {
+    gainParam.setValueAtTime(0, startTime);
+    gainParam.linearRampToValueAtTime(safeVol, startTime + safeIn);
+  } else {
+    gainParam.setValueAtTime(safeVol, startTime);
+  }
+
+  if (safeOut > 0.02) {
+    const fadeOutStart = Math.max(startTime + safeIn, endTime - safeOut);
+    gainParam.setValueAtTime(safeVol, fadeOutStart);
+    gainParam.linearRampToValueAtTime(0, endTime);
   }
 }
 
@@ -382,12 +421,19 @@ async function renderOfflineAudioMixdown(params: {
         src.buffer = buf;
         src.playbackRate.value = Math.max(0.25, Math.min(4, clip.speed));
         const gain = offlineCtx.createGain();
-        gain.gain.value = Math.max(0, Math.min(1, clip.volume));
-        src.connect(gain);
-        gain.connect(offlineCtx.destination);
         const startWhen = Math.max(0, clip.startTime);
         const offset = Math.max(0, clip.sourceOffset);
         const dur = Math.max(0.05, clip.duration);
+        applyAudioFadeEnvelope(
+          gain.gain,
+          Math.max(0, Math.min(1, clip.volume)),
+          startWhen,
+          dur,
+          clip.fadeIn,
+          clip.fadeOut
+        );
+        src.connect(gain);
+        gain.connect(offlineCtx.destination);
         if (offset < buf.duration) {
           src.start(startWhen, offset, dur);
           hasScheduledAnyAudio = true;
@@ -405,10 +451,19 @@ async function renderOfflineAudioMixdown(params: {
     const src = offlineCtx.createBufferSource();
     src.buffer = buf;
     const gain = offlineCtx.createGain();
-    gain.gain.value = sfx.volume;
+    const sfxStart = Math.max(0, sfx.startTime);
+    const sfxDur = Math.max(0.1, Math.min(buf.duration, sfx.duration));
+    applyAudioFadeEnvelope(
+      gain.gain,
+      sfx.volume,
+      sfxStart,
+      sfxDur,
+      sfx.fadeIn,
+      sfx.fadeOut
+    );
     src.connect(gain);
     gain.connect(offlineCtx.destination);
-    src.start(Math.max(0, sfx.startTime));
+    src.start(sfxStart);
     hasScheduledAnyAudio = true;
   }
 
@@ -420,11 +475,20 @@ async function renderOfflineAudioMixdown(params: {
     src.buffer = buf;
     src.loop = true;
     const gain = offlineCtx.createGain();
-    gain.gain.value = m.volume;
+    const mStart = Math.max(0, m.startTime);
+    const mDur = Math.max(0.1, m.duration);
+    applyAudioFadeEnvelope(
+      gain.gain,
+      m.volume,
+      mStart,
+      mDur,
+      m.fadeIn,
+      m.fadeOut
+    );
     src.connect(gain);
     gain.connect(offlineCtx.destination);
-    src.start(Math.max(0, m.startTime));
-    src.stop(Math.max(0, m.startTime + m.duration));
+    src.start(mStart);
+    src.stop(Math.max(0, mStart + mDur));
     hasScheduledAnyAudio = true;
   }
 
@@ -556,6 +620,7 @@ export async function exportWithWebCodecs(params: {
   sfxById: Map<string, SoundEffectAsset>;
   musicById: Map<string, MusicAsset>;
   seamDivider?: SeamDividerConfig;
+  signal?: AbortSignal;
   onProgress: (pct: number) => void;
 }): Promise<{ blobUrl: string; sizeLabel: string; mimeType: string }> {
   const {
@@ -572,8 +637,13 @@ export async function exportWithWebCodecs(params: {
     sfxById,
     musicById,
     seamDivider,
+    signal,
     onProgress,
   } = params;
+
+  if (signal?.aborted) {
+    throw new DOMException('Export cancelled', 'AbortError');
+  }
 
   const dims = getCanvasDimensions(aspectRatio, resolution);
   // H.264 requires even dimensions
@@ -615,6 +685,9 @@ export async function exportWithWebCodecs(params: {
   try {
     // 2. Prepare sequential decoders & preload images
     await session.prepare();
+    if (signal?.aborted) {
+      throw new DOMException('Export cancelled', 'AbortError');
+    }
     onProgress(7);
 
     // 3. Offline Audio Mixdown + optional AAC pre-encode
@@ -703,6 +776,9 @@ export async function exportWithWebCodecs(params: {
     let lastUiYield = performance.now();
 
     for (let frame = 0; frame < totalFrames; frame++) {
+      if (signal?.aborted) {
+        throw new DOMException('Export cancelled', 'AbortError');
+      }
       if (videoEncoderError) throw videoEncoderError;
 
       const t = Math.min(duration, frame / fps);
@@ -787,8 +863,14 @@ export async function exportWithWebCodecs(params: {
       mimeType: 'video/mp4',
     };
   } catch (err) {
-    console.error('WebCodecs MP4 export encountered an error, falling back:', err);
     session.dispose();
+    if (
+      signal?.aborted ||
+      (err instanceof DOMException && err.name === 'AbortError')
+    ) {
+      throw err;
+    }
+    console.error('WebCodecs MP4 export encountered an error, falling back:', err);
     return exportTimelineToVideo(params);
   } finally {
     if (videoEncoder) {

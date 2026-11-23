@@ -1,14 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import {
-  Pause,
-  Play,
-  Plus,
-  Repeat,
-  Scissors,
-  SkipBack,
-  Smartphone,
-  Upload,
-} from 'lucide-react';
+import { Plus, Upload } from 'lucide-react';
 import {
   AspectRatio,
   MediaAsset,
@@ -39,35 +30,19 @@ type DragHandle =
 interface PreviewStageProps {
   aspectRatio: AspectRatio;
   currentTime: number;
-  duration: number;
   isPlaying: boolean;
-  isLooping: boolean;
+  showSafeZone?: boolean;
   baseClips: VideoClip[];
   overlayClips: VideoClip[];
   textOverlays: TextOverlay[];
   assetsById: Map<string, MediaAsset>;
   selection: SelectionTarget;
   seamDivider?: SeamDividerConfig;
-  onTogglePlay: () => void;
-  onToggleLoop: () => void;
-  onSeek: (time: number) => void;
-  onSplitAtPlayhead: () => void;
   onSelect: (target: SelectionTarget) => void;
   onUpdateClipGeometry: (clipId: string, patch: Partial<VideoClip>) => void;
   onUpdateTextGeometry: (textId: string, patch: Partial<TextOverlay>) => void;
   onDropVideoFile?: (files: FileList) => void;
   onUploadVideoForTrack?: (files: FileList, track: 'base' | 'overlay') => void;
-}
-
-function formatTimecode(seconds: number): string {
-  const safe = Math.max(0, seconds);
-  const mins = Math.floor(safe / 60);
-  const secs = Math.floor(safe % 60);
-  const cs = Math.floor((safe % 1) * 100);
-  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(
-    2,
-    '0'
-  )}.${String(cs).padStart(2, '0')}`;
 }
 
 function getClipBoxPct(clip: VideoClip) {
@@ -163,19 +138,14 @@ function cursorForHandle(handle: DragHandle | null, isDragging: boolean): string
 export const PreviewStage: React.FC<PreviewStageProps> = ({
   aspectRatio,
   currentTime,
-  duration,
   isPlaying,
-  isLooping,
+  showSafeZone = false,
   baseClips,
   overlayClips,
   textOverlays,
   assetsById,
   selection,
   seamDivider,
-  onTogglePlay,
-  onToggleLoop,
-  onSeek,
-  onSplitAtPlayhead,
   onSelect,
   onUpdateClipGeometry,
   onUpdateTextGeometry,
@@ -183,6 +153,7 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
   onUploadVideoForTrack,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const stageAreaRef = useRef<HTMLDivElement>(null);
   const emptyViralInputRef = useRef<HTMLInputElement>(null);
   const emptyReactionInputRef = useRef<HTMLInputElement>(null);
   const dragStateRef = useRef<{
@@ -209,9 +180,33 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
   const [hoverCursor, setHoverCursor] = useState<string>('default');
   const [mediaTick, setMediaTick] = useState(0);
   const [isFileDragOver, setIsFileDragOver] = useState(false);
-  const [showSafeZone, setShowSafeZone] = useState(false);
+  const [stageBox, setStageBox] = useState<{ w: number; h: number }>({
+    w: 0,
+    h: 0,
+  });
+  const [snapGuides, setSnapGuides] = useState<{
+    x: number | null;
+    y: number | null;
+  }>({ x: null, y: null });
 
   const dims = getCanvasDimensions(aspectRatio, 'preview');
+
+  useEffect(() => {
+    const el = stageAreaRef.current;
+    if (!el) return;
+    const measure = () => {
+      const rect = el.getBoundingClientRect();
+      setStageBox({
+        w: Math.max(0, Math.floor(rect.width)),
+        h: Math.max(0, Math.floor(rect.height)),
+      });
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const obs = new ResizeObserver(measure);
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
 
   useEffect(() => {
     const unsubMedia = subscribeMediaReady(() => {
@@ -519,13 +514,29 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
       if (drag.handle === 'move') {
         let nextX = Math.max(5, Math.min(95, drag.initialX + dxPct));
         let nextY = Math.max(5, Math.min(95, drag.initialY + dyPct));
-        if (Math.abs(nextX - 50) < 2.2) nextX = 50;
-        if (Math.abs(nextY - 50) < 2.2) nextY = 50;
+        let gx: number | null = null;
+        let gy: number | null = null;
+        if (Math.abs(nextX - 50) < 2.2) {
+          nextX = 50;
+          gx = 50;
+        }
+        if (Math.abs(nextY - 50) < 2.2) {
+          nextY = 50;
+          gy = 50;
+        } else if (Math.abs(nextY - 25) < 1.8) {
+          nextY = 25;
+          gy = 25;
+        } else if (Math.abs(nextY - 75) < 1.8) {
+          nextY = 75;
+          gy = 75;
+        }
+        setSnapGuides({ x: gx, y: gy });
         onUpdateTextGeometry(drag.target.id, {
           x: Math.round(nextX),
           y: Math.round(nextY),
         });
       } else {
+        setSnapGuides({ x: null, y: null });
         const nextSize = Math.round(
           Math.max(24, Math.min(130, drag.initialFontSize + dyPct * 1.4))
         );
@@ -538,16 +549,30 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
       if (drag.handle === 'move') {
         let nextX = Math.max(-20, Math.min(120, drag.initialX + dxPct));
         let nextY = Math.max(-20, Math.min(120, drag.initialY + dyPct));
-        if (Math.abs(nextX - 50) < 2.2) nextX = 50;
-        if (Math.abs(nextY - 50) < 2.2) nextY = 50;
-        if (Math.abs(nextY - 25) < 2.0) nextY = 25;
-        if (Math.abs(nextY - 75) < 2.0) nextY = 75;
+        let gx: number | null = null;
+        let gy: number | null = null;
+        if (Math.abs(nextX - 50) < 2.2) {
+          nextX = 50;
+          gx = 50;
+        }
+        if (Math.abs(nextY - 50) < 2.2) {
+          nextY = 50;
+          gy = 50;
+        } else if (Math.abs(nextY - 25) < 2.0) {
+          nextY = 25;
+          gy = 25;
+        } else if (Math.abs(nextY - 75) < 2.0) {
+          nextY = 75;
+          gy = 75;
+        }
+        setSnapGuides({ x: gx, y: gy });
         onUpdateClipGeometry(drag.target.id, {
           x: Math.round(nextX * 10) / 10,
           y: Math.round(nextY * 10) / 10,
         });
         return;
       }
+      setSnapGuides({ x: null, y: null });
 
       const round1 = (v: number) => Math.round(v * 10) / 10;
       const minSize = 10;
@@ -728,6 +753,7 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
   const handleCanvasPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (dragStateRef.current) {
       dragStateRef.current = null;
+      setSnapGuides({ x: null, y: null });
       setHoverCursor('grab');
       try {
         e.currentTarget.releasePointerCapture(e.pointerId);
@@ -737,12 +763,18 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
     }
   };
 
-  const aspectStyle =
-    aspectRatio === '9:16'
-      ? 'aspect-[9/16] h-full max-h-full'
-      : aspectRatio === '1:1'
-      ? 'aspect-square h-full max-h-full'
-      : 'aspect-[16/9] w-full max-w-[620px]';
+  const fittedFrameStyle: React.CSSProperties | undefined =
+    stageBox.w > 20 && stageBox.h > 20
+      ? (() => {
+          const targetRatio = 9 / 16;
+          const maxH = Math.min(stageBox.h, stageBox.w / targetRatio);
+          const maxW = maxH * targetRatio;
+          return {
+            width: `${Math.floor(maxW)}px`,
+            height: `${Math.floor(maxH)}px`,
+          };
+        })()
+      : undefined;
 
   return (
     <div
@@ -762,156 +794,101 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
           setIsFileDragOver(false);
         }
       }}
-      className="flex-1 min-w-0 min-h-0 studio-stage-bg flex flex-col items-center justify-between p-3 select-none"
+      className="flex-1 min-w-0 min-h-0 h-full studio-stage-bg flex items-center justify-center p-3 sm:p-4 select-none overflow-hidden"
     >
-      {/* Canvas Stage */}
-      <div className="flex-1 min-h-0 w-full flex items-center justify-center py-0.5">
+      <div
+        ref={stageAreaRef}
+        className="w-full h-full min-h-0 flex items-center justify-center"
+      >
+        {/* Phone-Styled 9:16 Video Frame */}
         <div
-          className={`relative rounded-xl overflow-hidden border bg-black shadow-2xl flex items-center justify-center transition-colors ${aspectStyle} ${
+          style={fittedFrameStyle}
+          className={`relative rounded-[22px] overflow-hidden border-[3px] bg-black shadow-[0_20px_60px_rgba(0,0,0,0.85)] ring-1 ring-white/5 flex items-center justify-center transition-colors ${
+            fittedFrameStyle ? '' : 'aspect-[9/16] h-full max-h-full max-w-full'
+          } ${
             isFileDragOver
               ? 'border-[#C8FF00] ring-2 ring-[#C8FF00]/40'
               : 'border-[#262626]'
           }`}
         >
-          <canvas
-            ref={canvasRef}
-            width={dims.width}
-            height={dims.height}
-            onPointerDown={handleCanvasPointerDown}
-            onPointerMove={handleCanvasPointerMove}
-            onPointerUp={handleCanvasPointerUp}
-            style={{ cursor: hoverCursor }}
-            className="w-full h-full object-contain touch-none"
+        <canvas
+          ref={canvasRef}
+          width={dims.width}
+          height={dims.height}
+          onPointerDown={handleCanvasPointerDown}
+          onPointerMove={handleCanvasPointerMove}
+          onPointerUp={handleCanvasPointerUp}
+          style={{ cursor: hoverCursor }}
+          className="w-full h-full object-contain touch-none"
+        />
+
+        {snapGuides.x !== null && (
+          <div
+            style={{ left: `${snapGuides.x}%` }}
+            className="absolute top-0 bottom-0 w-px bg-[#C8FF00] shadow-[0_0_6px_#C8FF00] pointer-events-none z-20"
           />
+        )}
+        {snapGuides.y !== null && (
+          <div
+            style={{ top: `${snapGuides.y}%` }}
+            className="absolute left-0 right-0 h-px bg-[#C8FF00] shadow-[0_0_6px_#C8FF00] pointer-events-none z-20"
+          />
+        )}
 
-          {baseClips.length === 0 && overlayClips.length === 0 && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center p-5 text-center bg-[#090909]/90">
-              <input
-                ref={emptyViralInputRef}
-                type="file"
-                accept="video/*,image/*"
-                className="hidden"
-                onChange={(e) => {
-                  if (e.target.files?.length && onUploadVideoForTrack) {
-                    onUploadVideoForTrack(e.target.files, 'base');
-                    e.target.value = '';
-                  }
-                }}
-              />
-              <input
-                ref={emptyReactionInputRef}
-                type="file"
-                accept="video/*,image/*"
-                className="hidden"
-                onChange={(e) => {
-                  if (e.target.files?.length && onUploadVideoForTrack) {
-                    onUploadVideoForTrack(e.target.files, 'overlay');
-                    e.target.value = '';
-                  }
-                }}
-              />
+        {baseClips.length === 0 && overlayClips.length === 0 && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center p-5 text-center bg-[#090909]/90">
+            <input
+              ref={emptyViralInputRef}
+              type="file"
+              accept="video/*,image/*"
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files?.length && onUploadVideoForTrack) {
+                  onUploadVideoForTrack(e.target.files, 'base');
+                  e.target.value = '';
+                }
+              }}
+            />
+            <input
+              ref={emptyReactionInputRef}
+              type="file"
+              accept="video/*,image/*"
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files?.length && onUploadVideoForTrack) {
+                  onUploadVideoForTrack(e.target.files, 'overlay');
+                  e.target.value = '';
+                }
+              }}
+            />
 
-              <p className="font-display text-sm font-semibold text-white">
-                Drop your media to start
-              </p>
-              <p className="text-[11px] text-[#888888] mt-1 mb-4 max-w-[210px]">
-                Add a viral clip and a reaction video or photo to auto-build your split edit.
-              </p>
+            <p className="font-display text-sm font-semibold text-white">
+              Drop your media to start
+            </p>
+            <p className="text-[11px] text-[#888888] mt-1 mb-4 max-w-[210px]">
+              Add a viral clip and a reaction video or photo to auto-build your split edit.
+            </p>
 
-              <div className="w-full max-w-[210px] space-y-2">
-                <button
-                  type="button"
-                  onClick={() => emptyViralInputRef.current?.click()}
-                  className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-[#C8FF00] hover:bg-[#b5e600] text-xs font-bold text-[#090909] transition-colors cursor-pointer"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>Import Viral Media</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => emptyReactionInputRef.current?.click()}
-                  className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-[#191919] border border-[#262626] hover:border-[#C8FF00] text-xs font-semibold text-white transition-colors cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5 text-[#C8FF00]" />
-                  <span>Add Reaction Video / Photo</span>
-                </button>
-              </div>
+            <div className="w-full max-w-[210px] space-y-2">
+              <button
+                type="button"
+                onClick={() => emptyViralInputRef.current?.click()}
+                className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-[#C8FF00] hover:bg-[#b5e600] text-xs font-bold text-[#090909] transition-colors cursor-pointer"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Import Viral Media</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => emptyReactionInputRef.current?.click()}
+                className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-[#191919] border border-[#262626] hover:border-[#C8FF00] text-xs font-semibold text-white transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5 text-[#C8FF00]" />
+                <span>Add Reaction Video / Photo</span>
+              </button>
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* Compact Playback Bar */}
-      <div className="w-full max-w-md mt-2 bg-[#191919] border border-[#262626] rounded-lg px-3 py-1 flex items-center justify-between gap-3 shrink-0">
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => onSeek(0)}
-            title="Restart"
-            className="p-1.5 rounded text-[#888888] hover:text-white hover:bg-[#262626] transition-colors cursor-pointer"
-          >
-            <SkipBack className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={onTogglePlay}
-            title="Play / Pause (Space)"
-            className="w-7 h-7 rounded-full bg-[#C8FF00] hover:bg-[#b5e600] text-[#090909] flex items-center justify-center transition-colors cursor-pointer font-bold"
-          >
-            {isPlaying ? (
-              <Pause className="w-3.5 h-3.5 fill-current" />
-            ) : (
-              <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
-            )}
-          </button>
-        </div>
-
-        <div className="font-mono-tabular text-xs text-white flex items-center gap-1.5">
-          <span className="text-white font-medium">
-            {formatTimecode(currentTime)}
-          </span>
-          <span className="text-[#888888]">/</span>
-          <span className="text-[#888888]">{formatTimecode(duration)}</span>
-        </div>
-
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={onSplitAtPlayhead}
-            title="Split clip (S)"
-            className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-[#888888] hover:text-white hover:bg-[#262626] transition-colors cursor-pointer"
-          >
-            <Scissors className="w-3.5 h-3.5" />
-            <span>Split</span>
-          </button>
-
-          {aspectRatio === '9:16' && (
-            <button
-              type="button"
-              onClick={() => setShowSafeZone((s) => !s)}
-              title="Toggle 9:16 Safe Zone guide"
-              className={`p-1.5 rounded transition-colors cursor-pointer ${
-                showSafeZone
-                  ? 'text-[#C8FF00] bg-[#262626]'
-                  : 'text-[#888888] hover:text-white hover:bg-[#262626]'
-              }`}
-            >
-              <Smartphone className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={onToggleLoop}
-            title="Loop playback"
-            className={`p-1.5 rounded transition-colors cursor-pointer ${
-              isLooping
-                ? 'text-[#C8FF00] bg-[#262626]'
-                : 'text-[#888888] hover:text-white hover:bg-[#262626]'
-            }`}
-          >
-            <Repeat className="w-3.5 h-3.5" />
-          </button>
+          </div>
+        )}
         </div>
       </div>
     </div>

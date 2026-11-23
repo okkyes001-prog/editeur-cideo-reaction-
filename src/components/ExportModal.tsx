@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { CheckCircle2, Download, Film, X } from 'lucide-react';
 import {
   AspectRatio,
@@ -60,10 +60,21 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const [outputMime, setOutputMime] = useState('video/mp4');
   const [sizeLabel, setSizeLabel] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const dims = getCanvasDimensions(aspectRatio, resolution);
 
+  const handleCancelExport = () => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    setStatus('idle');
+    setProgress(0);
+    setErrorMsg('');
+  };
+
   const handleStartExport = async () => {
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     setStatus('rendering');
     setProgress(0);
     setErrorMsg('');
@@ -83,8 +94,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         sfxById,
         musicById,
         seamDivider,
+        signal: controller.signal,
         onProgress: setProgress,
       });
+
+      if (controller.signal.aborted) return;
 
       setDownloadUrl(result.blobUrl);
       setOutputMime(result.mimeType);
@@ -103,10 +117,22 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         downloadUrl: result.blobUrl,
       });
     } catch (err) {
+      if (
+        controller.signal.aborted ||
+        (err instanceof DOMException && err.name === 'AbortError')
+      ) {
+        setStatus('idle');
+        setProgress(0);
+        return;
+      }
       setStatus('error');
       setErrorMsg(
         err instanceof Error ? err.message : 'Browser video encoding failed.'
       );
+    } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
     }
   };
 
@@ -122,9 +148,14 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           </div>
           <button
             type="button"
-            onClick={onClose}
-            disabled={status === 'rendering'}
-            className="p-1 rounded text-[#888888] hover:text-white disabled:opacity-30 cursor-pointer"
+            onClick={() => {
+              if (status === 'rendering') {
+                handleCancelExport();
+              }
+              onClose();
+            }}
+            title={status === 'rendering' ? 'Cancel & close' : 'Close'}
+            className="p-1 rounded text-[#888888] hover:text-white cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -210,6 +241,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   style={{ width: `${progress}%` }}
                 />
               </div>
+              <button
+                type="button"
+                onClick={handleCancelExport}
+                className="w-full py-2 px-4 rounded-lg bg-[#090909] hover:bg-[#262626] border border-[#262626] hover:border-red-400/60 text-xs font-medium text-[#888888] hover:text-red-400 transition-colors cursor-pointer"
+              >
+                Cancel Export
+              </button>
             </div>
           )}
 

@@ -3,13 +3,22 @@ import {
   ChevronDown,
   ChevronUp,
   Maximize,
+  Pause,
+  Play,
+  Repeat,
   Scissors,
+  SeparatorHorizontal,
+  SkipBack,
+  Smartphone,
+  Sparkles,
   Trash2,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
 import {
   MusicClip,
+  OverlayLayoutPreset,
+  SeamDividerConfig,
   SelectionTarget,
   SoundEffectClip,
   TextOverlay,
@@ -19,12 +28,22 @@ import {
 interface TimelinePanelProps {
   currentTime: number;
   duration: number;
+  isPlaying?: boolean;
+  isLooping?: boolean;
+  showSafeZone?: boolean;
+  seamDivider?: SeamDividerConfig;
+  activeLayout?: OverlayLayoutPreset;
   baseClips: VideoClip[];
   overlayClips: VideoClip[];
   textOverlays: TextOverlay[];
   soundEffects: SoundEffectClip[];
   musicClips: MusicClip[];
   selection: SelectionTarget;
+  onTogglePlay?: () => void;
+  onToggleLoop?: () => void;
+  onToggleSafeZone?: () => void;
+  onToggleFrosted?: () => void;
+  onToggleSeamlessBlend?: () => void;
   onSeek: (time: number) => void;
   onSelect: (target: SelectionTarget) => void;
   onUpdateClipTiming: (
@@ -61,12 +80,22 @@ function formatCompactTimecode(seconds: number): string {
 export const TimelinePanel: React.FC<TimelinePanelProps> = ({
   currentTime,
   duration,
+  isPlaying = false,
+  isLooping = false,
+  showSafeZone = false,
+  seamDivider,
+  activeLayout,
   baseClips,
   overlayClips,
   textOverlays,
   soundEffects,
   musicClips,
   selection,
+  onTogglePlay,
+  onToggleLoop,
+  onToggleSafeZone,
+  onToggleFrosted,
+  onToggleSeamlessBlend,
   onSeek,
   onSelect,
   onUpdateClipTiming,
@@ -80,6 +109,7 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
   const [timelineHeight, setTimelineHeight] = useState(148);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
+  const [snapTime, setSnapTime] = useState<number | null>(null);
   const trackContainerRef = useRef<HTMLDivElement>(null);
 
   const handleResizePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -151,29 +181,87 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
     onSelect({ kind, id });
     const startX = e.clientX;
 
+    const snapTargets = new Set<number>([0, Number(currentTime.toFixed(2))]);
+    const collectItem = (itemId: string, start: number, dur: number) => {
+      if (itemId === id) return;
+      snapTargets.add(Number(start.toFixed(2)));
+      snapTargets.add(Number((start + dur).toFixed(2)));
+    };
+    baseClips.forEach((c) => collectItem(c.id, c.startTime, c.duration));
+    overlayClips.forEach((c) => collectItem(c.id, c.startTime, c.duration));
+    textOverlays.forEach((t) => collectItem(t.id, t.startTime, t.duration));
+    soundEffects.forEach((s) => collectItem(s.id, s.startTime, s.duration));
+    musicClips.forEach((m) => collectItem(m.id, m.startTime, m.duration));
+    const sortedSnaps = Array.from(snapTargets);
+    const snapThreshold = 0.14;
+
+    const findSnap = (val: number): number | null => {
+      let best: number | null = null;
+      let bestDist = snapThreshold;
+      for (const target of sortedSnaps) {
+        const d = Math.abs(val - target);
+        if (d < bestDist) {
+          bestDist = d;
+          best = target;
+        }
+      }
+      return best;
+    };
+
     const onMove = (ev: PointerEvent) => {
       const deltaSec = (ev.clientX - startX) / pxPerSec;
       let nextStart = initialStart;
       let nextDur = initialDur;
+      let matchedSnap: number | null = null;
 
       if (mode === 'move') {
-        nextStart = Math.max(
+        const rawStart = Math.max(
           0,
           Math.round((initialStart + deltaSec) * 10) / 10
         );
+        const startSnap = findSnap(rawStart);
+        const endSnap = findSnap(rawStart + initialDur);
+        if (startSnap !== null) {
+          nextStart = startSnap;
+          matchedSnap = startSnap;
+        } else if (endSnap !== null) {
+          nextStart = Math.max(0, Number((endSnap - initialDur).toFixed(2)));
+          matchedSnap = endSnap;
+        } else {
+          nextStart = rawStart;
+        }
       } else if (mode === 'trim-left') {
         const clampedDelta = Math.min(deltaSec, initialDur - 0.4);
-        nextStart = Math.max(
+        const rawStart = Math.max(
           0,
           Math.round((initialStart + clampedDelta) * 10) / 10
         );
+        const startSnap = findSnap(rawStart);
+        if (
+          startSnap !== null &&
+          initialStart + initialDur - startSnap >= 0.4
+        ) {
+          nextStart = startSnap;
+          matchedSnap = startSnap;
+        } else {
+          nextStart = rawStart;
+        }
         nextDur = Math.max(0.4, initialDur - (nextStart - initialStart));
       } else {
-        nextDur = Math.max(
+        const rawDur = Math.max(
           0.4,
           Math.round((initialDur + deltaSec) * 10) / 10
         );
+        const endSnap = findSnap(initialStart + rawDur);
+        if (endSnap !== null && endSnap - initialStart >= 0.4) {
+          nextDur = Number((endSnap - initialStart).toFixed(2));
+          matchedSnap = endSnap;
+        } else {
+          nextDur = rawDur;
+        }
       }
+
+      setSnapTime(matchedSnap);
 
       if (kind === 'clip') {
         onUpdateClipTiming(id, nextStart, nextDur);
@@ -187,6 +275,7 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
     };
 
     const onUp = () => {
+      setSnapTime(null);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
@@ -218,36 +307,35 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
       </div>
 
       {/* Pro Ultra-Slim Toolbar (h-7) */}
-      <div className="h-[26px] px-3 bg-[#141414] border-b border-[#262626] flex items-center justify-between gap-3 shrink-0">
-        {/* Left: Quick Actions & Live Timecode */}
-        <div className="flex items-center gap-1.5">
+      <div className="h-[28px] px-2.5 bg-[#141414] border-b border-[#262626] flex items-center justify-between gap-2 shrink-0 overflow-x-auto no-scrollbar">
+        {/* Left: Playback + Timecode + Quick Edit Actions */}
+        <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
-            onClick={onSplitAtPlayhead}
-            title="Split clip at playhead (S)"
-            className="h-5 px-2 rounded bg-[#191919] hover:bg-[#262626] hover:text-[#C8FF00] border border-[#262626] text-[10px] font-medium text-white flex items-center gap-1 transition-colors cursor-pointer"
+            onClick={() => onSeek(0)}
+            title="Restart"
+            className="w-5 h-5 rounded text-[#888888] hover:text-white hover:bg-[#262626] flex items-center justify-center transition-colors cursor-pointer"
           >
-            <Scissors className="w-2.5 h-2.5" />
-            <span>Split</span>
-            <span className="text-[9px] text-[#888888] font-mono-tabular">S</span>
+            <SkipBack className="w-3 h-3" />
           </button>
 
-          <button
-            type="button"
-            onClick={onDeleteSelected}
-            disabled={!selection}
-            title="Delete selected item (Del)"
-            className="h-5 px-2 rounded bg-[#191919] hover:bg-[#262626] hover:text-red-400 border border-[#262626] text-[10px] font-medium text-white disabled:opacity-30 disabled:pointer-events-none flex items-center gap-1 transition-colors cursor-pointer"
-          >
-            <Trash2 className="w-2.5 h-2.5" />
-            <span>Delete</span>
-            <span className="text-[9px] text-[#888888] font-mono-tabular">Del</span>
-          </button>
-
-          <div className="h-3.5 w-px bg-[#262626] mx-0.5" />
+          {onTogglePlay && (
+            <button
+              type="button"
+              onClick={onTogglePlay}
+              title="Play / Pause (Space)"
+              className="w-5 h-5 rounded-full bg-[#C8FF00] hover:bg-[#b5e600] text-[#090909] flex items-center justify-center transition-colors cursor-pointer"
+            >
+              {isPlaying ? (
+                <Pause className="w-2.5 h-2.5 fill-current" />
+              ) : (
+                <Play className="w-2.5 h-2.5 fill-current ml-0.5" />
+              )}
+            </button>
+          )}
 
           {/* Precision Pro Timecode */}
-          <div className="flex items-center gap-1 font-mono-tabular text-[11px] leading-none px-1.5 py-0.5 rounded bg-[#090909] border border-[#262626]">
+          <div className="flex items-center gap-1 font-mono-tabular text-[10px] leading-none px-1.5 py-1 rounded bg-[#090909] border border-[#262626]">
             <span className="text-[#C8FF00] font-semibold">
               {formatCompactTimecode(currentTime)}
             </span>
@@ -256,24 +344,114 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
               {formatCompactTimecode(duration)}
             </span>
           </div>
+
+          <div className="h-3.5 w-px bg-[#262626] mx-0.5" />
+
+          <button
+            type="button"
+            onClick={onSplitAtPlayhead}
+            title="Split clip at playhead (S)"
+            className="h-5 px-1.5 rounded bg-[#191919] hover:bg-[#262626] hover:text-[#C8FF00] border border-[#262626] text-[10px] font-medium text-white flex items-center gap-1 transition-colors cursor-pointer"
+          >
+            <Scissors className="w-2.5 h-2.5" />
+            <span className="hidden sm:inline">Split</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onDeleteSelected}
+            disabled={!selection}
+            title="Delete selected item (Del)"
+            className="h-5 px-1.5 rounded bg-[#191919] hover:bg-[#262626] hover:text-red-400 border border-[#262626] text-[10px] font-medium text-white disabled:opacity-30 disabled:pointer-events-none flex items-center gap-1 transition-colors cursor-pointer"
+          >
+            <Trash2 className="w-2.5 h-2.5" />
+            <span className="hidden sm:inline">Delete</span>
+          </button>
         </div>
 
-        {/* Center: Micro Status / Mode indicator */}
-        <div className="hidden md:flex items-center gap-2 text-[10px] text-[#888888]">
-          <span className="font-mono-tabular">
-            {selection ? (
-              <span className="text-white flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#C8FF00] animate-pulse" />
-                Selected: {selection.kind.toUpperCase()}
-              </span>
-            ) : (
-              'Drag clips · Trim edges · Space to Play'
-            )}
-          </span>
+        {/* Center: 1-Click Seamless Blend & Frosted Toggles */}
+        <div className="flex items-center gap-1 shrink-0">
+          {onToggleSeamlessBlend && (
+            <button
+              type="button"
+              onClick={onToggleSeamlessBlend}
+              title="Toggle Seamless Blend layout"
+              className={`h-5 px-2 rounded border text-[10px] font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
+                activeLayout === 'split-blend'
+                  ? 'bg-[#C8FF00] border-[#C8FF00] text-[#090909]'
+                  : 'bg-[#191919] border-[#262626] text-white hover:border-[#C8FF00]'
+              }`}
+            >
+              <Sparkles
+                className={`w-2.5 h-2.5 ${
+                  activeLayout === 'split-blend'
+                    ? 'text-[#090909]'
+                    : 'text-[#C8FF00]'
+                }`}
+              />
+              <span>Seamless Blend</span>
+            </button>
+          )}
+
+          {onToggleFrosted && (
+            <button
+              type="button"
+              onClick={onToggleFrosted}
+              title="Toggle Frosted glass seam blur"
+              className={`h-5 px-2 rounded border text-[10px] font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
+                seamDivider?.enabled &&
+                seamDivider.color.toLowerCase() === '#ffffff' &&
+                seamDivider.secondaryColor.toLowerCase() === '#d4d4d8'
+                  ? 'bg-[#C8FF00] border-[#C8FF00] text-[#090909]'
+                  : 'bg-[#191919] border-[#262626] text-white hover:border-[#C8FF00]'
+              }`}
+            >
+              <SeparatorHorizontal
+                className={`w-2.5 h-2.5 ${
+                  seamDivider?.enabled &&
+                  seamDivider.color.toLowerCase() === '#ffffff' &&
+                  seamDivider.secondaryColor.toLowerCase() === '#d4d4d8'
+                    ? 'text-[#090909]'
+                    : 'text-[#C8FF00]'
+                }`}
+              />
+              <span>Frosted</span>
+            </button>
+          )}
         </div>
 
-        {/* Right: Pro Zoom & Fit Stepper */}
-        <div className="flex items-center gap-1">
+        {/* Right: Safe Zone, Loop, Zoom & Collapse */}
+        <div className="flex items-center gap-1 shrink-0">
+          {onToggleSafeZone && (
+            <button
+              type="button"
+              onClick={onToggleSafeZone}
+              title="Toggle 9:16 Safe Zone guide"
+              className={`h-5 w-5 rounded border flex items-center justify-center transition-colors cursor-pointer ${
+                showSafeZone
+                  ? 'bg-[#262626] border-[#C8FF00] text-[#C8FF00]'
+                  : 'bg-[#090909] border-[#262626] text-[#888888] hover:text-white'
+              }`}
+            >
+              <Smartphone className="w-2.5 h-2.5" />
+            </button>
+          )}
+
+          {onToggleLoop && (
+            <button
+              type="button"
+              onClick={onToggleLoop}
+              title="Loop playback"
+              className={`h-5 w-5 rounded border flex items-center justify-center transition-colors cursor-pointer ${
+                isLooping
+                  ? 'bg-[#262626] border-[#C8FF00] text-[#C8FF00]'
+                  : 'bg-[#090909] border-[#262626] text-[#888888] hover:text-white'
+              }`}
+            >
+              <Repeat className="w-2.5 h-2.5" />
+            </button>
+          )}
+
           <div className="flex items-center bg-[#090909] border border-[#262626] rounded h-5 px-1">
             <button
               type="button"
@@ -283,7 +461,7 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
             >
               <ZoomOut className="w-2.5 h-2.5" />
             </button>
-            <span className="text-[9px] font-mono-tabular text-white px-1 min-w-[34px] text-center">
+            <span className="text-[9px] font-mono-tabular text-white px-1 min-w-[30px] text-center">
               {Math.round((pxPerSec / 52) * 100)}%
             </span>
             <button
@@ -738,6 +916,13 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
               {/* Diamond Arrowhead at Ruler */}
               <div className="w-2.5 h-2.5 bg-[#C8FF00] -translate-x-[4.5px] rotate-45 -mt-0.5 rounded-[1px] shadow-sm" />
             </div>
+
+            {snapTime !== null && (
+              <div
+                style={{ left: snapTime * pxPerSec }}
+                className="absolute top-0 bottom-0 w-px bg-[#38BDF8] shadow-[0_0_6px_#38BDF8] pointer-events-none z-20"
+              />
+            )}
           </div>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  FlipHorizontal,
   ImagePlus,
   Layers,
   Maximize2,
@@ -9,6 +10,7 @@ import {
   Trash2,
   Type,
   Volume2,
+  X,
 } from 'lucide-react';
 import {
   BackgroundRemovalMode,
@@ -47,6 +49,8 @@ interface RightInspectorProps {
   selectedMusic: MusicClip | null;
   seamDivider?: SeamDividerConfig;
   isBaseSplit?: boolean;
+  isMobileOpen?: boolean;
+  onCloseMobile?: () => void;
   onExpandBaseFullFrame?: () => void;
   onUpdateSeamDivider?: (patch: Partial<SeamDividerConfig>) => void;
   onUpdateClip: (clipId: string, patch: Partial<VideoClip>) => void;
@@ -73,6 +77,8 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   selectedMusic,
   seamDivider = DEFAULT_SEAM_DIVIDER,
   isBaseSplit = false,
+  isMobileOpen = false,
+  onCloseMobile,
   onExpandBaseFullFrame,
   onUpdateSeamDivider,
   onUpdateClip,
@@ -96,44 +102,65 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
     });
   }, []);
 
+  const asideClasses =
+    'fixed top-14 right-3 z-40 w-[264px] max-h-[calc(100vh-5rem)] lg:absolute lg:top-3 lg:right-3 lg:w-[260px] lg:max-h-[calc(100%-24px)] rounded-xl border border-[#2a2a2e] bg-[#141416]/95 backdrop-blur-md shadow-[0_20px_50px_rgba(0,0,0,0.8)] flex flex-col min-h-0 overflow-hidden';
+
+  if (!isMobileOpen) {
+    return null;
+  }
+
   if (
     !selection ||
     (!selectedClip && !selectedText && !selectedSfx && !selectedMusic)
   ) {
     return (
-      <aside className="w-[256px] shrink-0 bg-[#191919] border-l border-[#262626] flex flex-col min-h-0">
-        <div className="px-4 py-3 border-b border-[#262626] flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Sliders className="w-4 h-4 text-[#C8FF00]" />
-            <h2 className="font-display text-sm font-semibold text-white">
+      <aside className={asideClasses}>
+        <div className="px-3 py-2 bg-[#1a1a1d]/90 border-b border-[#262626] flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-1.5">
+            <Sliders className="w-3.5 h-3.5 text-[#C8FF00]" />
+            <h2 className="font-display text-[11px] font-semibold text-white">
               Split Line
             </h2>
           </div>
-          {onUpdateSeamDivider && (
-            <button
-              type="button"
-              onClick={() =>
-                onUpdateSeamDivider({ enabled: !seamDivider.enabled })
-              }
-              className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors cursor-pointer ${
-                seamDivider.enabled
-                  ? 'bg-[#C8FF00] text-[#090909]'
-                  : 'bg-[#262626] text-[#888888] hover:text-white'
-              }`}
-            >
-              {seamDivider.enabled ? 'ON' : 'OFF'}
-            </button>
-          )}
+          <div className="flex items-center gap-1">
+            {onUpdateSeamDivider && (
+              <button
+                type="button"
+                onClick={() =>
+                  onUpdateSeamDivider({ enabled: !seamDivider.enabled })
+                }
+                className={`px-1.5 py-0.5 rounded text-[9px] font-bold transition-colors cursor-pointer ${
+                  seamDivider.enabled
+                    ? 'bg-[#C8FF00] text-[#090909]'
+                    : 'bg-[#262626] text-[#888888] hover:text-white'
+                }`}
+              >
+                {seamDivider.enabled ? 'ON' : 'OFF'}
+              </button>
+            )}
+            {onCloseMobile && (
+              <button
+                type="button"
+                onClick={onCloseMobile}
+                aria-label="Close properties"
+                title="Close"
+                className="p-1 rounded text-[#888888] hover:text-white hover:bg-[#262626] transition-colors cursor-pointer"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto p-2.5">
+          <div className="space-y-2.5">
           {onUpdateSeamDivider && (
             <>
-              <div className="space-y-2">
-                <p className="text-[11px] font-medium text-[#888888]">
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-medium text-[#888888]">
                   Style Presets
                 </p>
-                <div className="grid grid-cols-2 gap-1.5">
+                <div className="grid grid-cols-3 gap-1">
                   {SEAM_DIVIDER_PRESETS.map((preset) => {
                     const active =
                       seamDivider.enabled &&
@@ -155,19 +182,19 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                             opacity: preset.opacity,
                           })
                         }
-                        className={`rounded-lg p-2 border text-left transition-colors cursor-pointer space-y-1.5 ${
+                        className={`rounded-md p-1.5 border text-left transition-colors cursor-pointer space-y-1 ${
                           active
                             ? 'bg-[#222222] border-[#C8FF00]'
                             : 'bg-[#090909] border-[#262626] hover:border-[#333333]'
                         }`}
                       >
                         <div
-                          className="h-3 w-full rounded"
+                          className="h-2 w-full rounded-sm"
                           style={{
                             background: `linear-gradient(90deg, ${preset.color}, ${preset.secondaryColor})`,
                           }}
                         />
-                        <p className="text-[11px] font-medium text-white truncate">
+                        <p className="text-[9px] font-medium text-white truncate leading-none">
                           {preset.label}
                         </p>
                       </button>
@@ -177,9 +204,9 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
               </div>
 
               {seamDivider.enabled && (
-                <div className="space-y-3 pt-3 border-t border-[#262626]">
+                <div className="space-y-2 pt-2 border-t border-[#262626]">
                   <div>
-                    <div className="flex justify-between text-[11px] mb-1">
+                    <div className="flex justify-between text-[10px] mb-0.5">
                       <span className="text-[#888888]">Blur</span>
                       <span className="font-mono-tabular text-white">
                         {seamDivider.blurAmount}px
@@ -288,12 +315,12 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
             </>
           )}
 
-          <div className="pt-3 border-t border-[#262626] text-center space-y-1">
-            <Layers className="w-4 h-4 text-[#888888] mx-auto" />
-            <p className="text-[11px] text-[#888888] leading-relaxed">
-              Click any video, text, or audio on canvas or timeline to edit its
-              properties.
+          <div className="pt-2 border-t border-[#262626] text-center space-y-1">
+            <Layers className="w-3.5 h-3.5 text-[#888888] mx-auto" />
+            <p className="text-[10px] text-[#888888] leading-snug">
+              Click any video, text, or audio to edit.
             </p>
+          </div>
           </div>
         </div>
       </aside>
@@ -301,11 +328,11 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
   }
 
   return (
-    <aside className="w-[256px] shrink-0 bg-[#191919] border-l border-[#262626] flex flex-col min-h-0">
-      <div className="px-4 py-3 border-b border-[#262626] flex items-center justify-between">
-        <div className="flex items-center gap-2 min-w-0">
-          <Layers className="w-4 h-4 text-[#C8FF00] shrink-0" />
-          <h2 className="font-display text-sm font-semibold text-white truncate">
+    <aside className={asideClasses}>
+      <div className="px-3 py-2 bg-[#1a1a1d]/90 border-b border-[#262626] flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <Layers className="w-3.5 h-3.5 text-[#C8FF00] shrink-0" />
+          <h2 className="font-display text-[11px] font-semibold text-white truncate">
             {selectedClip
               ? selectedClip.track === 'overlay'
                 ? 'Reaction Video'
@@ -318,25 +345,39 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
           </h2>
         </div>
 
-        <button
-          type="button"
-          onClick={onDeleteSelected}
-          title="Delete selected"
-          className="p-1.5 rounded text-[#888888] hover:text-[#EF4444] hover:bg-[#262626] transition-colors cursor-pointer"
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={onDeleteSelected}
+            title="Delete selected"
+            className="p-1 rounded text-[#888888] hover:text-[#EF4444] hover:bg-[#262626] transition-colors cursor-pointer"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+          {onCloseMobile && (
+            <button
+              type="button"
+              onClick={onCloseMobile}
+              aria-label="Close properties"
+              title="Close"
+              className="p-1 rounded text-[#888888] hover:text-white hover:bg-[#262626] transition-colors cursor-pointer"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-5">
+      <div className="flex-1 overflow-y-auto p-2.5">
+        <div className="space-y-3">
         {selectedClip && (
           <>
             {/* Background Removal & Replacement */}
-            <div className="space-y-3 pb-3.5 border-b border-[#22222A]">
+            <div className="space-y-2 pb-2.5 border-b border-[#22222A]">
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-white flex items-center gap-1.5">
-                  <Scissors className="w-3.5 h-3.5 text-[#06B6D4]" />
-                  Background & Cutout
+                <span className="text-[10px] font-semibold text-white flex items-center gap-1">
+                  <Scissors className="w-3 h-3 text-[#06B6D4]" />
+                  Background &amp; Cutout
                 </span>
                 {(selectedClip.bgRemovalMode ?? 'none') !== 'none' && (
                   <button
@@ -346,7 +387,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                         bgRemovalMode: 'none',
                       })
                     }
-                    className="text-[10px] text-[#71717A] hover:text-white cursor-pointer"
+                    className="text-[9px] text-[#71717A] hover:text-white cursor-pointer"
                   >
                     Reset
                   </button>
@@ -384,7 +425,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                             : {}),
                         });
                       }}
-                      className={`py-1.5 rounded-md text-[10px] font-medium transition-colors cursor-pointer ${
+                      className={`py-1 rounded text-[9px] font-medium transition-colors cursor-pointer ${
                         active
                           ? 'bg-[#06B6D4] text-[#09090B] font-semibold'
                           : 'bg-[#14141A] border border-[#22222A] text-[#A1A1AA] hover:text-white'
@@ -793,12 +834,12 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
               )}
             </div>
 
-            <div className="space-y-3.5">
-              <div className="space-y-1.5">
-                <span className="text-[11px] text-[#A1A1AA] block">
+            <div className="space-y-2">
+              <div className="space-y-1">
+                <span className="text-[10px] text-[#A1A1AA] block">
                   Frame Fit
                 </span>
-                <div className="grid grid-cols-2 gap-1.5">
+                <div className="grid grid-cols-2 gap-1">
                   {(['cover', 'contain'] as const).map((fitMode) => (
                     <button
                       key={fitMode}
@@ -809,7 +850,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                           blurBackdrop: fitMode === 'contain',
                         })
                       }
-                      className={`py-1.5 rounded-md text-[11px] font-medium capitalize transition-colors cursor-pointer ${
+                      className={`py-1 rounded text-[10px] font-medium capitalize transition-colors cursor-pointer ${
                         selectedClip.fit === fitMode
                           ? 'bg-[#F97316] text-white font-semibold'
                           : 'bg-[#14141A] border border-[#22222A] text-[#A1A1AA] hover:text-white'
@@ -833,60 +874,62 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                         cropRight: 0,
                       })
                     }
-                    className="w-full py-1 rounded bg-[#14141A] border border-[#22222A] hover:border-[#F97316] text-[10px] font-medium text-[#A1A1AA] hover:text-white transition-colors cursor-pointer"
+                    className="w-full py-1 rounded bg-[#14141A] border border-[#22222A] hover:border-[#F97316] text-[9px] font-medium text-[#A1A1AA] hover:text-white transition-colors cursor-pointer"
                   >
                     Reset Edge Crop
                   </button>
                 )}
               </div>
 
-              <div>
-                <div className="flex justify-between text-[11px] mb-1">
-                  <span className="text-[#A1A1AA]">Scale</span>
-                  <span className="font-mono-tabular text-[#E4E4E7]">
-                    {Math.round(selectedClip.scale * 100)}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={40}
-                  max={160}
-                  value={Math.round(selectedClip.scale * 100)}
-                  onChange={(e) =>
-                    onUpdateClip(selectedClip.id, {
-                      scale: Number(e.target.value) / 100,
-                    })
-                  }
-                  className="w-full"
-                />
-              </div>
-
-              <div>
-                <div className="flex justify-between text-[11px] mb-1">
-                  <span className="text-[#A1A1AA]">Corner Radius</span>
-                  <span className="font-mono-tabular text-[#E4E4E7]">
-                    {selectedClip.borderRadius >= 900
-                      ? 'Circle'
-                      : `${selectedClip.borderRadius}px`}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={120}
-                  value={Math.min(120, selectedClip.borderRadius)}
-                  onChange={(e) =>
-                    onUpdateClip(selectedClip.id, {
-                      borderRadius: Number(e.target.value),
-                    })
-                  }
-                  className="w-full"
-                />
-              </div>
-
-              <div className="pt-2 border-t border-[#22222A] space-y-2.5">
+              <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <div className="flex justify-between text-[11px] mb-1">
+                  <div className="flex justify-between text-[10px] mb-0.5">
+                    <span className="text-[#A1A1AA]">Scale</span>
+                    <span className="font-mono-tabular text-[#E4E4E7]">
+                      {Math.round(selectedClip.scale * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={40}
+                    max={160}
+                    value={Math.round(selectedClip.scale * 100)}
+                    onChange={(e) =>
+                      onUpdateClip(selectedClip.id, {
+                        scale: Number(e.target.value) / 100,
+                      })
+                    }
+                    className="w-full"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-[10px] mb-0.5">
+                    <span className="text-[#A1A1AA]">Radius</span>
+                    <span className="font-mono-tabular text-[#E4E4E7]">
+                      {selectedClip.borderRadius >= 900
+                        ? 'Circle'
+                        : `${selectedClip.borderRadius}px`}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={120}
+                    value={Math.min(120, selectedClip.borderRadius)}
+                    onChange={(e) =>
+                      onUpdateClip(selectedClip.id, {
+                        borderRadius: Number(e.target.value),
+                      })
+                    }
+                    className="w-full"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-1.5 border-t border-[#22222A] space-y-1.5">
+                <div>
+                  <div className="flex justify-between text-[10px] mb-0.5">
                     <span className="text-[#A1A1AA]">Edge Feather</span>
                     <span className="font-mono-tabular text-[#E4E4E7]">
                       {selectedClip.feather ?? 0}%
@@ -914,7 +957,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
 
                 {(selectedClip.feather ?? 0) > 0 && (
                   <div>
-                    <span className="text-[10px] text-[#71717A] block mb-1.5">
+                    <span className="text-[9px] text-[#71717A] block mb-1">
                       Blend Edge
                     </span>
                     <div className="grid grid-cols-5 gap-1">
@@ -938,7 +981,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                                 featherEdge: opt.id,
                               })
                             }
-                            className={`py-1 rounded-md text-[10px] font-medium transition-colors cursor-pointer ${
+                            className={`py-0.5 rounded text-[9px] font-medium transition-colors cursor-pointer ${
                               active
                                 ? 'bg-[#F97316] text-white font-semibold'
                                 : 'bg-[#14141A] border border-[#22222A] text-[#A1A1AA] hover:text-white'
@@ -953,52 +996,209 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 )}
               </div>
 
-              <div>
-                <div className="flex justify-between text-[11px] mb-1">
-                  <span className="text-[#A1A1AA]">Duration</span>
-                  <span className="font-mono-tabular text-[#E4E4E7]">
-                    {selectedClip.duration.toFixed(1)}s
-                  </span>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <div className="flex justify-between text-[10px] mb-0.5">
+                    <span className="text-[#A1A1AA]">Duration</span>
+                    <span className="font-mono-tabular text-[#E4E4E7]">
+                      {selectedClip.duration.toFixed(1)}s
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.5}
+                    max={Math.max(120, Math.ceil(selectedClip.duration))}
+                    step={0.5}
+                    value={selectedClip.duration}
+                    onChange={(e) =>
+                      onUpdateClip(selectedClip.id, {
+                        duration: Number(e.target.value),
+                      })
+                    }
+                    className="w-full"
+                  />
                 </div>
-                <input
-                  type="range"
-                  min={0.5}
-                  max={Math.max(120, Math.ceil(selectedClip.duration))}
-                  step={0.5}
-                  value={selectedClip.duration}
-                  onChange={(e) =>
-                    onUpdateClip(selectedClip.id, {
-                      duration: Number(e.target.value),
-                    })
-                  }
-                  className="w-full"
-                />
+
+                <div>
+                  <div className="flex justify-between text-[10px] mb-0.5">
+                    <span className="text-[#A1A1AA]">Volume</span>
+                    <span className="font-mono-tabular text-[#E4E4E7]">
+                      {Math.round(selectedClip.volume * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={Math.round(selectedClip.volume * 100)}
+                    onChange={(e) =>
+                      onUpdateClip(selectedClip.id, {
+                        volume: Number(e.target.value) / 100,
+                      })
+                    }
+                    className="w-full"
+                  />
+                </div>
               </div>
 
-              <div>
-                <div className="flex justify-between text-[11px] mb-1">
-                  <span className="text-[#A1A1AA]">Audio Volume</span>
-                  <span className="font-mono-tabular text-[#E4E4E7]">
-                    {Math.round(selectedClip.volume * 100)}%
-                  </span>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <div className="flex justify-between text-[9px] mb-0.5">
+                    <span className="text-[#A1A1AA]">Fade In</span>
+                    <span className="font-mono-tabular text-[#E4E4E7]">
+                      {(selectedClip.fadeIn ?? 0).toFixed(1)}s
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={4}
+                    step={0.2}
+                    value={selectedClip.fadeIn ?? 0}
+                    onChange={(e) =>
+                      onUpdateClip(selectedClip.id, {
+                        fadeIn: Number(e.target.value),
+                      })
+                    }
+                    className="w-full"
+                  />
                 </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={Math.round(selectedClip.volume * 100)}
-                  onChange={(e) =>
-                    onUpdateClip(selectedClip.id, {
-                      volume: Number(e.target.value) / 100,
-                    })
-                  }
-                  className="w-full"
-                />
+                <div>
+                  <div className="flex justify-between text-[9px] mb-0.5">
+                    <span className="text-[#A1A1AA]">Fade Out</span>
+                    <span className="font-mono-tabular text-[#E4E4E7]">
+                      {(selectedClip.fadeOut ?? 0).toFixed(1)}s
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={4}
+                    step={0.2}
+                    value={selectedClip.fadeOut ?? 0}
+                    onChange={(e) =>
+                      onUpdateClip(selectedClip.id, {
+                        fadeOut: Number(e.target.value),
+                      })
+                    }
+                    className="w-full"
+                  />
+                </div>
+              </div>
+
+              {/* Color Adjustments & Mirror */}
+              <div className="space-y-1.5 pt-1.5 border-t border-[#22222A]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-medium text-white">
+                    Color &amp; Flip
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onUpdateClip(selectedClip.id, {
+                          flipH: !selectedClip.flipH,
+                        })
+                      }
+                      title="Flip horizontally"
+                      className={`px-1.5 py-0.5 rounded text-[9px] font-medium flex items-center gap-1 border transition-colors cursor-pointer ${
+                        selectedClip.flipH
+                          ? 'bg-[#C8FF00] border-[#C8FF00] text-[#090909] font-bold'
+                          : 'bg-[#14141A] border-[#22222A] text-[#A1A1AA] hover:text-white'
+                      }`}
+                    >
+                      <FlipHorizontal className="w-2.5 h-2.5" />
+                      <span>Flip</span>
+                    </button>
+                    {((selectedClip.brightness ?? 100) !== 100 ||
+                      (selectedClip.contrast ?? 100) !== 100 ||
+                      (selectedClip.saturate ?? 100) !== 100) && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onUpdateClip(selectedClip.id, {
+                            brightness: 100,
+                            contrast: 100,
+                            saturate: 100,
+                          })
+                        }
+                        className="text-[9px] text-[#71717A] hover:text-white cursor-pointer"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <div className="flex justify-between text-[9px] mb-0.5">
+                      <span className="text-[#A1A1AA]">Bright</span>
+                      <span className="font-mono-tabular text-[#E4E4E7]">
+                        {selectedClip.brightness ?? 100}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={50}
+                      max={150}
+                      value={selectedClip.brightness ?? 100}
+                      onChange={(e) =>
+                        onUpdateClip(selectedClip.id, {
+                          brightness: Number(e.target.value),
+                        })
+                      }
+                      className="w-full"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-[9px] mb-0.5">
+                      <span className="text-[#A1A1AA]">Contrast</span>
+                      <span className="font-mono-tabular text-[#E4E4E7]">
+                        {selectedClip.contrast ?? 100}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={50}
+                      max={150}
+                      value={selectedClip.contrast ?? 100}
+                      onChange={(e) =>
+                        onUpdateClip(selectedClip.id, {
+                          contrast: Number(e.target.value),
+                        })
+                      }
+                      className="w-full"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-[9px] mb-0.5">
+                      <span className="text-[#A1A1AA]">Sat</span>
+                      <span className="font-mono-tabular text-[#E4E4E7]">
+                        {selectedClip.saturate ?? 100}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={200}
+                      value={selectedClip.saturate ?? 100}
+                      onChange={(e) =>
+                        onUpdateClip(selectedClip.id, {
+                          saturate: Number(e.target.value),
+                        })
+                      }
+                      className="w-full"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="space-y-2 pt-3 border-t border-[#22222A]">
-              <label className="text-[11px] font-medium text-[#A1A1AA] block">
+            <div className="space-y-1 pt-2 border-t border-[#22222A]">
+              <label className="text-[10px] font-medium text-[#A1A1AA] block">
                 Dynamic Transition
               </label>
               <select
@@ -1010,7 +1210,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                       e.target.value === 'none' ? 0 : 0.4,
                   })
                 }
-                className="w-full bg-[#14141A] border border-[#27272F] focus:border-[#F97316] rounded-md px-2.5 py-1.5 text-xs text-white outline-none cursor-pointer"
+                className="w-full bg-[#14141A] border border-[#27272F] focus:border-[#F97316] rounded px-2 py-1 text-[11px] text-white outline-none cursor-pointer"
               >
                 {TRANSITION_OPTIONS.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -1024,25 +1224,25 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
 
         {selectedText && (
           <>
-            <div className="space-y-2">
-              <label className="text-[11px] font-medium text-[#A1A1AA] block">
+            <div className="space-y-1">
+              <label className="text-[10px] font-medium text-[#A1A1AA] block">
                 Caption Text
               </label>
               <textarea
-                rows={3}
+                rows={2}
                 value={selectedText.text}
                 onChange={(e) =>
                   onUpdateText(selectedText.id, { text: e.target.value })
                 }
-                className="w-full bg-[#14141A] border border-[#27272F] focus:border-[#F97316] rounded-lg p-2.5 text-xs text-white outline-none resize-none"
+                className="w-full bg-[#14141A] border border-[#27272F] focus:border-[#F97316] rounded-md p-2 text-[11px] text-white outline-none resize-none"
               />
             </div>
 
-            <div className="space-y-2 pt-2 border-t border-[#22222A]">
-              <label className="text-[11px] font-medium text-[#A1A1AA] block">
+            <div className="space-y-1.5 pt-1.5 border-t border-[#22222A]">
+              <label className="text-[10px] font-medium text-[#A1A1AA] block">
                 Style
               </label>
-              <div className="grid grid-cols-2 gap-1.5">
+              <div className="grid grid-cols-2 gap-1">
                 {TEXT_STYLE_PRESETS.map((preset) => (
                   <button
                     key={preset.id}
@@ -1058,7 +1258,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                         uppercase: preset.uppercase,
                       })
                     }
-                    className={`px-2 py-1.5 rounded-md border text-[11px] font-medium transition-colors cursor-pointer ${
+                    className={`px-2 py-1 rounded border text-[10px] font-medium transition-colors cursor-pointer ${
                       selectedText.stylePreset === preset.id
                         ? 'bg-[#1B1B22] border-[#F97316] text-white'
                         : 'bg-[#14141A] border-[#22222A] text-[#A1A1AA] hover:text-white'
@@ -1070,9 +1270,9 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
               </div>
             </div>
 
-            <div className="space-y-3 pt-2 border-t border-[#22222A]">
+            <div className="space-y-2 pt-1.5 border-t border-[#22222A]">
               <div>
-                <div className="flex justify-between text-[11px] mb-1">
+                <div className="flex justify-between text-[10px] mb-0.5">
                   <span className="text-[#A1A1AA]">Font Size</span>
                   <span className="font-mono-tabular text-[#E4E4E7]">
                     {selectedText.fontSize}px
@@ -1092,9 +1292,9 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-1.5">
                 <div>
-                  <label className="text-[10px] text-[#71717A] block mb-1">
+                  <label className="text-[9px] text-[#71717A] block mb-0.5">
                     Text Color
                   </label>
                   <input
@@ -1103,11 +1303,11 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                     onChange={(e) =>
                       onUpdateText(selectedText.id, { color: e.target.value })
                     }
-                    className="w-full h-7 bg-transparent border border-[#27272F] rounded cursor-pointer"
+                    className="w-full h-5 bg-transparent border border-[#27272F] rounded cursor-pointer"
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] text-[#71717A] block mb-1">
+                  <label className="text-[9px] text-[#71717A] block mb-0.5">
                     Box Color
                   </label>
                   <input
@@ -1116,13 +1316,13 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                     onChange={(e) =>
                       onUpdateText(selectedText.id, { bgColor: e.target.value })
                     }
-                    className="w-full h-7 bg-transparent border border-[#27272F] rounded cursor-pointer"
+                    className="w-full h-5 bg-transparent border border-[#27272F] rounded cursor-pointer"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="text-[11px] font-medium text-[#A1A1AA] block mb-1.5">
+                <label className="text-[10px] font-medium text-[#A1A1AA] block mb-1">
                   Animation
                 </label>
                 <select
@@ -1132,7 +1332,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                       animation: e.target.value as TextAnimation,
                     })
                   }
-                  className="w-full bg-[#14141A] border border-[#27272F] focus:border-[#F97316] rounded-md px-2.5 py-1.5 text-xs text-white outline-none cursor-pointer"
+                  className="w-full bg-[#14141A] border border-[#27272F] focus:border-[#F97316] rounded px-2 py-1 text-[11px] text-white outline-none cursor-pointer"
                 >
                   <option value="pop">Spring Pop</option>
                   <option value="slide-up">Slide Up</option>
@@ -1176,6 +1376,51 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
                 className="w-full"
               />
             </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <div className="flex justify-between text-[10px] mb-1">
+                  <span className="text-[#A1A1AA]">Fade In</span>
+                  <span className="font-mono-tabular text-[#E4E4E7]">
+                    {(selectedSfx.fadeIn ?? 0).toFixed(1)}s
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={3}
+                  step={0.1}
+                  value={selectedSfx.fadeIn ?? 0}
+                  onChange={(e) =>
+                    onUpdateSfx(selectedSfx.id, {
+                      fadeIn: Number(e.target.value),
+                    })
+                  }
+                  className="w-full"
+                />
+              </div>
+              <div>
+                <div className="flex justify-between text-[10px] mb-1">
+                  <span className="text-[#A1A1AA]">Fade Out</span>
+                  <span className="font-mono-tabular text-[#E4E4E7]">
+                    {(selectedSfx.fadeOut ?? 0).toFixed(1)}s
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={3}
+                  step={0.1}
+                  value={selectedSfx.fadeOut ?? 0}
+                  onChange={(e) =>
+                    onUpdateSfx(selectedSfx.id, {
+                      fadeOut: Number(e.target.value),
+                    })
+                  }
+                  className="w-full"
+                />
+              </div>
+            </div>
           </div>
         )}
 
@@ -1212,6 +1457,51 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
               />
             </div>
 
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <div className="flex justify-between text-[10px] mb-1">
+                  <span className="text-[#A1A1AA]">Fade In</span>
+                  <span className="font-mono-tabular text-[#E4E4E7]">
+                    {(selectedMusic.fadeIn ?? 0).toFixed(1)}s
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={5}
+                  step={0.2}
+                  value={selectedMusic.fadeIn ?? 0}
+                  onChange={(e) =>
+                    onUpdateMusic(selectedMusic.id, {
+                      fadeIn: Number(e.target.value),
+                    })
+                  }
+                  className="w-full"
+                />
+              </div>
+              <div>
+                <div className="flex justify-between text-[10px] mb-1">
+                  <span className="text-[#A1A1AA]">Fade Out</span>
+                  <span className="font-mono-tabular text-[#E4E4E7]">
+                    {(selectedMusic.fadeOut ?? 0).toFixed(1)}s
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={5}
+                  step={0.2}
+                  value={selectedMusic.fadeOut ?? 0}
+                  onChange={(e) =>
+                    onUpdateMusic(selectedMusic.id, {
+                      fadeOut: Number(e.target.value),
+                    })
+                  }
+                  className="w-full"
+                />
+              </div>
+            </div>
+
             <div>
               <div className="flex justify-between text-[11px] mb-1">
                 <span className="text-[#A1A1AA]">Duration</span>
@@ -1235,6 +1525,7 @@ export const RightInspector: React.FC<RightInspectorProps> = ({
             </div>
           </div>
         )}
+        </div>
       </div>
     </aside>
   );

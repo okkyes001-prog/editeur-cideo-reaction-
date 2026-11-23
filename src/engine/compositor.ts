@@ -228,6 +228,22 @@ export function pauseAllUploadedVideos(): void {
   });
 }
 
+export function computeAudioFadeMultiplier(
+  localTime: number,
+  duration: number,
+  fadeIn = 0,
+  fadeOut = 0
+): number {
+  const safeIn = Math.max(0, fadeIn);
+  const safeOut = Math.max(0, fadeOut);
+  const inMult = safeIn > 0.02 ? Math.min(1, Math.max(0, localTime) / safeIn) : 1;
+  const outMult =
+    safeOut > 0.02
+      ? Math.min(1, Math.max(0, duration - localTime) / safeOut)
+      : 1;
+  return Math.min(inMult, outMult);
+}
+
 export function releaseMediaAsset(
   assetId: string,
   srcUrl?: string,
@@ -650,6 +666,19 @@ function renderVideoClipLayer(
       }
     }
 
+    if (clip.flipH) {
+      targetCtx.translate(mx + mw / 2, 0);
+      targetCtx.scale(-1, 1);
+      targetCtx.translate(-(mx + mw / 2), 0);
+    }
+
+    const bright = clip.brightness ?? 100;
+    const cont = clip.contrast ?? 100;
+    const sat = clip.saturate ?? 100;
+    if (bright !== 100 || cont !== 100 || sat !== 100) {
+      targetCtx.filter = `brightness(${bright}%) contrast(${cont}%) saturate(${sat}%)`;
+    }
+
     if (asset.kind === 'builtin' && asset.builtinScene) {
       const img = preloadImage(asset.srcUrl);
       renderBuiltinAnimatedScene(
@@ -777,7 +806,17 @@ function renderVideoClipLayer(
           sourceTimeForMask = exportSrc.currentTime;
         }
       } else {
-        const video = getOrCreateVideoElement(asset, clip.volume, clip.speed);
+        const fadeMult = computeAudioFadeMultiplier(
+          timeInClip,
+          clip.duration,
+          clip.fadeIn,
+          clip.fadeOut
+        );
+        const video = getOrCreateVideoElement(
+          asset,
+          clip.volume * fadeMult,
+          clip.speed
+        );
         if (video) {
           const realDuration =
             Number.isFinite(video.duration) && video.duration > 0
@@ -2185,6 +2224,7 @@ export async function exportTimelineToVideo(params: {
   sfxById: Map<string, SoundEffectAsset>;
   musicById: Map<string, MusicAsset>;
   seamDivider?: SeamDividerConfig;
+  signal?: AbortSignal;
   onProgress: (pct: number) => void;
 }): Promise<{ blobUrl: string; sizeLabel: string; mimeType: string }> {
   const {
@@ -2201,8 +2241,13 @@ export async function exportTimelineToVideo(params: {
     sfxById,
     musicById,
     seamDivider,
+    signal,
     onProgress,
   } = params;
+
+  if (signal?.aborted) {
+    throw new DOMException('Export cancelled', 'AbortError');
+  }
 
   const { width, height } = getCanvasDimensions(aspectRatio, resolution);
   const canvas = document.createElement('canvas');
@@ -2299,6 +2344,16 @@ export async function exportTimelineToVideo(params: {
     const triggeredSfx = new Set<string>();
 
     for (let frame = 0; frame < totalFrames; frame++) {
+      if (signal?.aborted) {
+        try {
+          if (recorder.state !== 'inactive') {
+            recorder.stop();
+          }
+        } catch {
+          // Ignore recorder stop error on abort
+        }
+        throw new DOMException('Export cancelled', 'AbortError');
+      }
       const frameStart = performance.now();
       const t = Math.min(duration, frame / fps);
 

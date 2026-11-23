@@ -1030,15 +1030,24 @@ export function syncActiveMusicPlayback(
 
   const activeIds = new Set<string>();
   for (const clip of musicClips) {
-    const inRange =
-      timelineTime >= clip.startTime &&
-      timelineTime < clip.startTime + clip.duration;
+    const localT = timelineTime - clip.startTime;
+    const inRange = localT >= 0 && localT < clip.duration;
     if (!inRange) continue;
     activeIds.add(clip.id);
 
+    const fadeIn = Math.max(0, clip.fadeIn ?? 0);
+    const fadeOut = Math.max(0, clip.fadeOut ?? 0);
+    const inMult = fadeIn > 0.02 ? Math.min(1, localT / fadeIn) : 1;
+    const outMult =
+      fadeOut > 0.02 ? Math.min(1, (clip.duration - localT) / fadeOut) : 1;
+    const effectiveVol = Math.max(
+      0,
+      Math.min(1.2, clip.volume * Math.min(inMult, outMult))
+    );
+
     const existing = activeMusicNodes.get(clip.id);
     if (existing) {
-      existing.gain.gain.value = Math.max(0, Math.min(1.2, clip.volume));
+      existing.gain.gain.value = effectiveVol;
       continue;
     }
 

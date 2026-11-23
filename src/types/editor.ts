@@ -113,6 +113,8 @@ export interface SoundEffectClip {
   startTime: number;
   duration: number;
   volume: number;
+  fadeIn?: number;
+  fadeOut?: number;
 }
 
 export interface MusicAsset {
@@ -132,6 +134,8 @@ export interface MusicClip {
   startTime: number;
   duration: number;
   volume: number;
+  fadeIn?: number;
+  fadeOut?: number;
 }
 
 export interface VideoClip {
@@ -161,6 +165,12 @@ export interface VideoClip {
   blurBackdrop: boolean;
   volume: number;
   speed: number;
+  fadeIn?: number;
+  fadeOut?: number;
+  brightness?: number;
+  contrast?: number;
+  saturate?: number;
+  flipH?: boolean;
   transitionIn: TransitionType;
   transitionInDuration: number;
   transitionOut: TransitionType;

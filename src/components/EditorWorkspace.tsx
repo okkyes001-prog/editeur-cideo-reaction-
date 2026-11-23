@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Sliders, X } from 'lucide-react';
 import {
-  AspectRatio,
   BrandKit,
   ClipProject,
   ExportRecord,
@@ -20,6 +20,7 @@ import {
 import {
   DEFAULT_SEAM_DIVIDER,
   OVERLAY_LAYOUT_PRESETS,
+  SEAM_DIVIDER_PRESETS,
   TEXT_STYLE_PRESETS,
 } from '../data/presets';
 import {
@@ -35,6 +36,11 @@ import { RightInspector } from './RightInspector';
 import { TimelinePanel } from './TimelinePanel';
 import { ExportModal } from './ExportModal';
 import { clearClipMaskCache } from '../engine/backgroundRemoval';
+import {
+  buildTimedCaptionsFromScript,
+  detectSpeechSegmentsFromUrl,
+  TimedCaptionCue,
+} from '../engine/captions';
 
 interface EditorWorkspaceProps {
   project: ClipProject;
@@ -229,6 +235,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLooping, setIsLooping] = useState(true);
+  const [showSafeZone, setShowSafeZone] = useState(false);
   const [selection, setSelection] = useState<SelectionTarget>(() =>
     project.overlayClips[0]
       ? { kind: 'clip', id: project.overlayClips[0].id }
@@ -237,6 +244,15 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
       : null
   );
   const [showExportModal, setShowExportModal] = useState(false);
+  const [isMobileInspectorOpen, setIsMobileInspectorOpen] = useState(false);
+  const [showBrowserWarning, setShowBrowserWarning] = useState(() => {
+    if (typeof navigator === 'undefined') return false;
+    const ua = navigator.userAgent || '';
+    const isInAppBrowser =
+      /Instagram|FBAN|FBAV|Musical_ly|BytedanceWebview|TikTok/i.test(ua);
+    const missingWebCodecs = typeof VideoEncoder === 'undefined';
+    return isInAppBrowser || missingWebCodecs;
+  });
 
   const [past, setPast] = useState<ClipProject[]>([]);
   const [future, setFuture] = useState<ClipProject[]>([]);
@@ -266,6 +282,33 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
     },
     [project, seamDivider, commitProjectChange]
   );
+
+  const handleToggleFrosted = useCallback(() => {
+    const isFrostedActive =
+      seamDivider.enabled &&
+      seamDivider.color.toLowerCase() === '#ffffff' &&
+      seamDivider.secondaryColor.toLowerCase() === '#d4d4d8';
+
+    if (isFrostedActive) {
+      handleUpdateSeamDivider({ enabled: false });
+      return;
+    }
+
+    const frostedPreset = SEAM_DIVIDER_PRESETS.find(
+      (p) => p.id === 'pure-frosted'
+    );
+    if (!frostedPreset) return;
+
+    handleUpdateSeamDivider({
+      enabled: true,
+      positionY: seamDivider.positionY ?? 50,
+      blurAmount: frostedPreset.blurAmount,
+      thickness: frostedPreset.thickness,
+      color: frostedPreset.color,
+      secondaryColor: frostedPreset.secondaryColor,
+      opacity: frostedPreset.opacity,
+    });
+  }, [seamDivider, handleUpdateSeamDivider]);
 
   const handleUndo = useCallback(() => {
     if (past.length === 0) return;
@@ -667,6 +710,13 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
     });
   };
 
+  const handleToggleSeamlessBlend = () => {
+    const currentLayout = project.overlayClips[0]?.layoutPreset;
+    handleApplyOverlayLayout(
+      currentLayout === 'split-blend' ? 'split-50' : 'split-blend'
+    );
+  };
+
   const handleSwapTracks = useCallback(() => {
     const b0 = project.baseClips[0];
     const o0 = project.overlayClips[0];
@@ -788,6 +838,114 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
     });
     setSelection({ kind: 'text', id: newText.id });
   };
+
+  const handleAddTimedCaptions = useCallback(
+    (
+      cues: TimedCaptionCue[],
+      stylePreset: TextStylePreset = 'caption-karaoke'
+    ) => {
+      if (cues.length === 0) return;
+      const preset =
+        TEXT_STYLE_PRESETS.find((p) => p.id === stylePreset) ||
+        TEXT_STYLE_PRESETS[0];
+
+      const stamp = Date.now();
+      const created: TextOverlay[] = cues.map((cue, idx) => ({
+        id: `txt-${stamp}-${idx}`,
+        text: cue.text,
+        startTime: cue.startTime,
+        duration: Math.max(0.45, cue.duration),
+        x: 50,
+        y: 78,
+        fontSize: 54,
+        fontFamily: brandKit.primaryFont || preset.fontFamily,
+        color: preset.color,
+        bgColor: preset.bgColor,
+        accentColor: brandKit.accentColor || preset.accentColor,
+        hasBg: preset.hasBg,
+        stylePreset: preset.id,
+        animation: 'pop',
+        animationDuration: 0.2,
+        uppercase: preset.uppercase,
+      }));
+
+      commitProjectChange({
+        ...project,
+        textOverlays: [...project.textOverlays, ...created],
+      });
+      setSelection({ kind: 'text', id: created[0].id });
+    },
+    [project, brandKit, commitProjectChange]
+  );
+
+  const handleGenerateSyncedCaptions = useCallback(
+    async (scriptText: string, stylePreset: TextStylePreset): Promise<number> => {
+      const candidateClip =
+        selectedClip ||
+        project.overlayClips[0] ||
+        project.baseClips[0] ||
+        null;
+
+      if (!candidateClip) return 0;
+      const asset = assetsById.get(candidateClip.assetId);
+
+      const segments =
+        asset?.kind === 'uploaded' &&
+        asset.mediaType !== 'image' &&
+        asset.srcUrl
+          ? await detectSpeechSegmentsFromUrl(
+              asset.srcUrl,
+              candidateClip.sourceOffset,
+              candidateClip.duration,
+              candidateClip.speed,
+              candidateClip.startTime
+            )
+          : [];
+
+      const cues = buildTimedCaptionsFromScript(
+        scriptText,
+        segments,
+        candidateClip.startTime,
+        candidateClip.duration
+      );
+      if (cues.length === 0) return 0;
+      handleAddTimedCaptions(cues, stylePreset);
+      return cues.length;
+    },
+    [selectedClip, project, assetsById, handleAddTimedCaptions]
+  );
+
+  const handleAddVoiceoverRecording = useCallback(
+    (blob: Blob, durationSec: number) => {
+      const srcUrl = URL.createObjectURL(blob);
+      const count =
+        sfxAssets.filter((s) => s.category === 'Voiceover').length + 1;
+      const newAsset: SoundEffectAsset = {
+        id: `vo-${Date.now()}`,
+        name: `Voiceover #${count}`,
+        kind: 'uploaded',
+        duration: durationSec,
+        srcUrl,
+        category: 'Voiceover',
+      };
+      onAddSfxAssets([newAsset]);
+
+      const newSfx: SoundEffectClip = {
+        id: `sfx-c-${Date.now()}`,
+        sfxAssetId: newAsset.id,
+        label: newAsset.name,
+        startTime: Number(currentTime.toFixed(1)),
+        duration: Math.max(0.5, durationSec),
+        volume: 1.0,
+      };
+      commitProjectChange({
+        ...project,
+        soundEffects: [...project.soundEffects, newSfx],
+      });
+      setSelection({ kind: 'sfx', id: newSfx.id });
+    },
+    [sfxAssets, onAddSfxAssets, currentTime, project, commitProjectChange]
+  );
 
   const handleAddSoundEffect = (sfxAsset: SoundEffectAsset) => {
     const newSfx: SoundEffectClip = {
@@ -1054,7 +1212,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
       {/* Top Navbar */}
       <EditorTopBar
         title={project.title}
-        aspectRatio={project.aspectRatio}
+        aspectRatio="9:16"
         canUndo={past.length > 0}
         canRedo={future.length > 0}
         onOpenProjects={() => {
@@ -1064,9 +1222,6 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
         onTitleChange={(nextTitle) =>
           commitProjectChange({ ...project, title: nextTitle }, false)
         }
-        onAspectRatioChange={(ratio: AspectRatio) =>
-          commitProjectChange({ ...project, aspectRatio: ratio })
-        }
         onUndo={handleUndo}
         onRedo={handleRedo}
         onOpenExport={() => {
@@ -1075,13 +1230,30 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
         }}
       />
 
-      {/* RVE Layout: Full-Height Sidebar on Left | [ [Preview + Inspector] / Timeline ] on Right */}
+      {showBrowserWarning && (
+        <div className="bg-[#191919] border-b border-[#C8FF00]/35 px-4 py-1.5 flex items-center justify-between gap-3 text-[11px] text-[#F4F4F5] shrink-0">
+          <span>
+            For hardware-accelerated fast MP4 export, open Klivaro in{' '}
+            <strong className="text-[#C8FF00]">Chrome</strong> or{' '}
+            <strong className="text-[#C8FF00]">Safari</strong> (outside in-app browsers).
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowBrowserWarning(false)}
+            aria-label="Dismiss browser notice"
+            className="p-0.5 text-[#888888] hover:text-white cursor-pointer shrink-0"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Studio Layout: Left Sidebar | [Inspector + Timeline] | Full-Height 9:16 Preview under Export */}
       <div className="flex-1 min-h-0 flex">
         <LeftAssetDrawer
           assets={assets}
           sfxAssets={sfxAssets}
           musicAssets={musicAssets}
-          aspectRatio={project.aspectRatio}
           activeTab={activeTab}
           isTimelinePlaying={isPlaying}
           seamDivider={seamDivider}
@@ -1096,40 +1268,31 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
           onUploadMusicFiles={handleUploadMusicFiles}
           onAddClipToTrack={handleAddClipToTrack}
           onDeleteAsset={handleDeleteLibraryAsset}
-          onAspectRatioChange={(ratio) =>
-            commitProjectChange({ ...project, aspectRatio: ratio })
-          }
           onApplyOverlayLayout={handleApplyOverlayLayout}
           onSwapTracks={handleSwapTracks}
           onUpdateSeamDivider={handleUpdateSeamDivider}
           onAddTextOverlay={handleAddTextOverlay}
+          onAddTimedCaptions={handleAddTimedCaptions}
+          onGenerateSyncedCaptions={handleGenerateSyncedCaptions}
+          onAddVoiceoverRecording={handleAddVoiceoverRecording}
           onAddSoundEffect={handleAddSoundEffect}
           onAddMusicClip={handleAddMusicClip}
           onApplyTransitionToSelected={handleApplyTransitionToSelected}
         />
 
-        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
-          <div className="flex-1 min-h-0 flex">
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col relative">
+          <div className="flex-1 min-h-0 flex relative">
             <PreviewStage
-              aspectRatio={project.aspectRatio}
+              aspectRatio="9:16"
               currentTime={currentTime}
-              duration={duration}
               isPlaying={isPlaying}
-              isLooping={isLooping}
+              showSafeZone={showSafeZone}
               baseClips={project.baseClips}
               overlayClips={project.overlayClips}
               textOverlays={project.textOverlays}
               assetsById={assetsById}
               selection={selection}
               seamDivider={seamDivider}
-              onTogglePlay={() => setIsPlaying((p) => !p)}
-              onToggleLoop={() => setIsLooping((l) => !l)}
-              onSeek={(t) => {
-                triggeredSfxRef.current.clear();
-                stopAllActiveMusic();
-                setCurrentTime(t);
-              }}
-              onSplitAtPlayhead={handleSplitAtPlayhead}
               onSelect={setSelection}
               onUpdateClipGeometry={handleUpdateClip}
               onUpdateTextGeometry={handleUpdateText}
@@ -1145,6 +1308,18 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
               onUploadVideoForTrack={handleUploadVideoForTrack}
             />
 
+            {!isMobileInspectorOpen && (
+              <button
+                type="button"
+                onClick={() => setIsMobileInspectorOpen(true)}
+                title="Open Properties"
+                className="absolute top-3 right-3 z-20 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#191919]/95 border border-[#262626] hover:border-[#C8FF00] text-[11px] font-semibold text-white shadow-lg transition-colors cursor-pointer"
+              >
+                <Sliders className="w-3.5 h-3.5 text-[#C8FF00]" />
+                <span>Edit</span>
+              </button>
+            )}
+
             <RightInspector
               selection={selection}
               selectedClip={selectedClip}
@@ -1153,6 +1328,8 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
               selectedMusic={selectedMusic}
               seamDivider={seamDivider}
               isBaseSplit={isBaseSplit}
+              isMobileOpen={isMobileInspectorOpen}
+              onCloseMobile={() => setIsMobileInspectorOpen(false)}
               onExpandBaseFullFrame={handleExpandBaseFullFrame}
               onUpdateSeamDivider={handleUpdateSeamDivider}
               onUpdateClip={handleUpdateClip}
@@ -1166,12 +1343,22 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
           <TimelinePanel
             currentTime={currentTime}
             duration={duration}
+            isPlaying={isPlaying}
+            isLooping={isLooping}
+            showSafeZone={showSafeZone}
+            seamDivider={seamDivider}
+            activeLayout={project.overlayClips[0]?.layoutPreset}
             baseClips={project.baseClips}
             overlayClips={project.overlayClips}
             textOverlays={project.textOverlays}
             soundEffects={project.soundEffects}
             musicClips={musicClips}
             selection={selection}
+            onTogglePlay={() => setIsPlaying((p) => !p)}
+            onToggleLoop={() => setIsLooping((l) => !l)}
+            onToggleSafeZone={() => setShowSafeZone((s) => !s)}
+            onToggleFrosted={handleToggleFrosted}
+            onToggleSeamlessBlend={handleToggleSeamlessBlend}
             onSeek={(t) => {
               triggeredSfxRef.current.clear();
               stopAllActiveMusic();
@@ -1200,7 +1387,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
         <ExportModal
           projectId={project.id}
           projectTitle={project.title}
-          aspectRatio={project.aspectRatio}
+          aspectRatio="9:16"
           duration={duration}
           baseClips={project.baseClips}
           overlayClips={project.overlayClips}

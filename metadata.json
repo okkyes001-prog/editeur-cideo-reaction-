@@ -1,7 +1,7 @@
 {
   "name": "Klivaro",
   "description": "Pro dark-mode short video editor for viral video-over-video reaction clipping, kinetic text, dynamic transitions, and sound effects.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["microphone"],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]

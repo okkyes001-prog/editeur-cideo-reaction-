@@ -11,12 +11,11 @@ import { CREATOR_AVATAR_URL } from '../data/presets';
 
 interface EditorTopBarProps {
   title: string;
-  aspectRatio: AspectRatio;
+  aspectRatio?: AspectRatio;
   canUndo: boolean;
   canRedo: boolean;
   onOpenProjects: () => void;
   onTitleChange: (nextTitle: string) => void;
-  onAspectRatioChange: (ratio: AspectRatio) => void;
   onUndo: () => void;
   onRedo: () => void;
   onOpenExport: () => void;
@@ -24,12 +23,10 @@ interface EditorTopBarProps {
 
 export const EditorTopBar: React.FC<EditorTopBarProps> = ({
   title,
-  aspectRatio,
   canUndo,
   canRedo,
   onOpenProjects,
   onTitleChange,
-  onAspectRatioChange,
   onUndo,
   onRedo,
   onOpenExport,
@@ -66,22 +63,13 @@ export const EditorTopBar: React.FC<EditorTopBarProps> = ({
         />
       </div>
 
-      {/* Center: Format Selector */}
-      <div className="hidden md:flex items-center gap-0.5 p-0.5 bg-[#191919] border border-[#262626] rounded-lg">
-        {(['9:16', '1:1', '16:9'] as AspectRatio[]).map((ratio) => (
-          <button
-            key={ratio}
-            type="button"
-            onClick={() => onAspectRatioChange(ratio)}
-            className={`px-3 py-1 text-[11px] font-mono-tabular rounded-md transition-colors cursor-pointer whitespace-nowrap ${
-              aspectRatio === ratio
-                ? 'bg-[#C8FF00] text-[#090909] font-semibold'
-                : 'text-[#888888] hover:text-white'
-            }`}
-          >
-            {ratio}
-          </button>
-        ))}
+      {/* Center: Fixed 9:16 Vertical Format Indicator */}
+      <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 bg-[#191919] border border-[#262626] rounded-lg">
+        <span className="w-2 h-3 rounded-[2px] border border-[#C8FF00]" />
+        <span className="text-[11px] font-mono-tabular font-semibold text-white">
+          9:16
+        </span>
+        <span className="text-[10px] text-[#888888]">Reels / TikTok</span>
       </div>
 
       {/* Right: Undo / Redo + Export CTA + Avatar */}

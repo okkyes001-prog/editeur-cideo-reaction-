@@ -1,21 +1,23 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowUpDown,
+  Captions,
   Film,
   LayoutTemplate,
+  Mic,
   Music,
-  PanelLeftClose,
   Play,
   Plus,
   SeparatorHorizontal,
+  Sparkles,
   Square,
   Trash2,
   Type,
   Upload,
   Volume2,
+  X,
 } from 'lucide-react';
 import {
-  AspectRatio,
   MediaAsset,
   MusicAsset,
   OverlayLayoutPreset,
@@ -37,6 +39,10 @@ import {
   stopPreviewAudio,
   togglePreviewMusic,
 } from '../engine/soundEffects';
+import {
+  parseSubtitleFile,
+  TimedCaptionCue,
+} from '../engine/captions';
 
 export type LeftToolTab = 'videos' | 'format' | 'text' | 'line' | 'sfx' | 'music';
 
@@ -44,7 +50,6 @@ interface LeftAssetDrawerProps {
   assets: MediaAsset[];
   sfxAssets: SoundEffectAsset[];
   musicAssets: MusicAsset[];
-  aspectRatio: AspectRatio;
   activeTab: LeftToolTab;
   isTimelinePlaying?: boolean;
   seamDivider?: SeamDividerConfig;
@@ -57,11 +62,19 @@ interface LeftAssetDrawerProps {
   onUploadMusicFiles: (files: FileList) => void;
   onAddClipToTrack: (asset: MediaAsset, track: 'base' | 'overlay') => void;
   onDeleteAsset?: (assetId: string) => void;
-  onAspectRatioChange: (ratio: AspectRatio) => void;
   onApplyOverlayLayout: (preset: OverlayLayoutPreset) => void;
   onSwapTracks?: () => void;
   onUpdateSeamDivider?: (patch: Partial<SeamDividerConfig>) => void;
   onAddTextOverlay: (presetId: TextStylePreset, customText?: string) => void;
+  onAddTimedCaptions?: (
+    cues: TimedCaptionCue[],
+    stylePreset?: TextStylePreset
+  ) => void;
+  onGenerateSyncedCaptions?: (
+    scriptText: string,
+    stylePreset: TextStylePreset
+  ) => Promise<number>;
+  onAddVoiceoverRecording?: (file: Blob, durationSec: number) => void;
   onAddSoundEffect: (sfxAsset: SoundEffectAsset) => void;
   onAddMusicClip: (musicAsset: MusicAsset) => void;
   onApplyTransitionToSelected: (transition: TransitionType) => void;
@@ -71,7 +84,6 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
   assets,
   sfxAssets,
   musicAssets,
-  aspectRatio,
   activeTab,
   isTimelinePlaying = false,
   seamDivider = DEFAULT_SEAM_DIVIDER,
@@ -84,11 +96,13 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
   onUploadMusicFiles,
   onAddClipToTrack,
   onDeleteAsset,
-  onAspectRatioChange,
   onApplyOverlayLayout,
   onSwapTracks,
   onUpdateSeamDivider,
   onAddTextOverlay,
+  onAddTimedCaptions,
+  onGenerateSyncedCaptions,
+  onAddVoiceoverRecording,
   onAddSoundEffect,
   onAddMusicClip,
   onApplyTransitionToSelected,
@@ -97,18 +111,192 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
   const reactionInputRef = useRef<HTMLInputElement>(null);
   const sfxInputRef = useRef<HTMLInputElement>(null);
   const musicInputRef = useRef<HTMLInputElement>(null);
+  const subtitleInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const voiceChunksRef = useRef<BlobPart[]>([]);
+  const voiceTimerRef = useRef<number | null>(null);
+  const voiceStartRef = useRef<number>(0);
+
   const [quickText, setQuickText] = useState('');
+  const [captionScript, setCaptionScript] = useState('');
+  const [captionStatus, setCaptionStatus] = useState<string | null>(null);
+  const [isSyncingCaptions, setIsSyncingCaptions] = useState(false);
+  const [isListeningCaptions, setIsListeningCaptions] = useState(false);
+  const speechRecRef = useRef<{ stop: () => void } | null>(null);
+
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [voiceSeconds, setVoiceSeconds] = useState(0);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+
   const [sfxCategory, setSfxCategory] = useState<string>('All');
   const [musicMood, setMusicMood] = useState<string>('All');
   const [previewMusicId, setPreviewMusicId] = useState<string | null>(null);
   const [dragOverTrack, setDragOverTrack] = useState<'base' | 'overlay' | null>(
     null
   );
-  const [isDrawerOpen, setIsDrawerOpen] = useState(true);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   useEffect(() => {
-    return () => stopPreviewAudio();
+    return () => {
+      stopPreviewAudio();
+      if (voiceTimerRef.current) window.clearInterval(voiceTimerRef.current);
+      micStreamRef.current?.getTracks().forEach((t) => t.stop());
+      try {
+        speechRecRef.current?.stop();
+      } catch {
+        // Ignore
+      }
+    };
   }, []);
+
+  const handleToggleVoiceRecording = async () => {
+    if (isRecordingVoice) {
+      if (voiceTimerRef.current) {
+        window.clearInterval(voiceTimerRef.current);
+        voiceTimerRef.current = null;
+      }
+      try {
+        mediaRecorderRef.current?.stop();
+      } catch {
+        // Ignore
+      }
+      setIsRecordingVoice(false);
+      return;
+    }
+
+    setVoiceError(null);
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setVoiceError('Microphone recording is not supported in this browser.');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      micStreamRef.current = stream;
+      voiceChunksRef.current = [];
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      voiceStartRef.current = performance.now();
+      setVoiceSeconds(0);
+
+      recorder.ondataavailable = (ev) => {
+        if (ev.data.size > 0) voiceChunksRef.current.push(ev.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        micStreamRef.current = null;
+        const elapsedSec = Math.max(
+          0.5,
+          Number(((performance.now() - voiceStartRef.current) / 1000).toFixed(2))
+        );
+        const mime = recorder.mimeType || 'audio/webm';
+        const blob = new Blob(voiceChunksRef.current, { type: mime });
+        voiceChunksRef.current = [];
+        if (blob.size > 0 && onAddVoiceoverRecording) {
+          onAddVoiceoverRecording(blob, elapsedSec);
+        }
+      };
+
+      recorder.start(120);
+      setIsRecordingVoice(true);
+      voiceTimerRef.current = window.setInterval(() => {
+        setVoiceSeconds((s) => s + 1);
+      }, 1000);
+    } catch {
+      setVoiceError('Microphone permission denied or unavailable.');
+    }
+  };
+
+  const handleToggleLiveSpeechCaptions = () => {
+    if (isListeningCaptions) {
+      try {
+        speechRecRef.current?.stop();
+      } catch {
+        // Ignore
+      }
+      speechRecRef.current = null;
+      setIsListeningCaptions(false);
+      return;
+    }
+
+    const win = window as unknown as {
+      SpeechRecognition?: new () => {
+        continuous: boolean;
+        interimResults: boolean;
+        lang: string;
+        onresult: ((ev: {
+          resultIndex: number;
+          results: ArrayLike<{
+            isFinal: boolean;
+            0?: { transcript?: string };
+          }>;
+        }) => void) | null;
+        onerror: (() => void) | null;
+        onend: (() => void) | null;
+        start: () => void;
+        stop: () => void;
+      };
+      webkitSpeechRecognition?: new () => {
+        continuous: boolean;
+        interimResults: boolean;
+        lang: string;
+        onresult: ((ev: {
+          resultIndex: number;
+          results: ArrayLike<{
+            isFinal: boolean;
+            0?: { transcript?: string };
+          }>;
+        }) => void) | null;
+        onerror: (() => void) | null;
+        onend: (() => void) | null;
+        start: () => void;
+        stop: () => void;
+      };
+    };
+
+    const SpeechRecCtor = win.SpeechRecognition || win.webkitSpeechRecognition;
+    if (!SpeechRecCtor) {
+      setCaptionStatus('Live dictation requires Chrome/Edge. Paste lines or import .srt/.vtt.');
+      return;
+    }
+
+    try {
+      const rec = new SpeechRecCtor();
+      rec.continuous = true;
+      rec.interimResults = false;
+      rec.lang = navigator.language || 'en-US';
+      let lastPhraseAt = performance.now();
+
+      rec.onresult = (ev) => {
+        const res = ev.results;
+        const latest = res[res.length - 1];
+        const text = latest?.[0]?.transcript?.trim();
+        if (latest?.isFinal && text) {
+          const now = performance.now();
+          lastPhraseAt = now;
+          setCaptionScript((prev) => (prev ? `${prev}\n${text}` : text));
+          setCaptionStatus(`Captured: "${text.slice(0, 28)}..."`);
+        } else {
+          void lastPhraseAt;
+        }
+      };
+      rec.onerror = () => {
+        setIsListeningCaptions(false);
+        setCaptionStatus('Speech recognition stopped.');
+      };
+      rec.onend = () => {
+        setIsListeningCaptions(false);
+        speechRecRef.current = null;
+      };
+      rec.start();
+      speechRecRef.current = rec;
+      setIsListeningCaptions(true);
+      setCaptionStatus('Listening to microphone...');
+    } catch {
+      setCaptionStatus('Could not start speech dictation.');
+    }
+  };
 
   useEffect(() => {
     if ((activeTab !== 'music' || isTimelinePlaying) && previewMusicId) {
@@ -125,7 +313,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
     { id: 'videos', label: 'Videos', icon: <Film className="w-4 h-4" /> },
     {
       id: 'format',
-      label: 'Format',
+      label: 'Layout',
       icon: <LayoutTemplate className="w-4 h-4" />,
     },
     { id: 'text', label: 'Text', icon: <Type className="w-4 h-4" /> },
@@ -139,9 +327,9 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
   ];
 
   return (
-    <aside className="flex h-full shrink-0 border-r border-[#262626] bg-[#090909]">
+    <aside className="flex h-full shrink-0 border-r border-[#262626] bg-[#090909] relative z-30">
       {/* Sleek Full-Height Icon Rail */}
-      <div className="w-[56px] border-r border-[#262626] flex flex-col items-center py-2.5 gap-1.5">
+      <div className="w-[56px] flex flex-col items-center py-2.5 gap-1.5">
         {railItems.map((item) => {
           const active = activeTab === item.id && isDrawerOpen;
           return (
@@ -173,15 +361,15 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
         })}
       </div>
 
-      {/* Collapsible Contextual Asset Drawer */}
+      {/* Floating Popover Drawer for Videos, Layout, Text, Split Line, Sound & Music */}
       {isDrawerOpen && (
-      <div className="w-[264px] flex flex-col min-h-0 bg-[#191919]">
-        <div className="px-3.5 py-2.5 border-b border-[#262626] flex items-center justify-between">
-          <h2 className="font-display text-xs font-semibold text-white tracking-wide">
+      <div className="absolute top-3 left-[64px] z-40 w-[264px] max-w-[calc(100vw-76px)] max-h-[calc(100%-24px)] rounded-xl border border-[#2a2a2e] bg-[#141416]/95 backdrop-blur-md shadow-[0_20px_50px_rgba(0,0,0,0.8)] flex flex-col min-h-0 overflow-hidden">
+        <div className="px-3 py-2 bg-[#1a1a1d]/90 border-b border-[#262626] flex items-center justify-between shrink-0">
+          <h2 className="font-display text-[11px] font-semibold text-white tracking-wide">
             {activeTab === 'videos'
               ? 'Viral & Reaction'
               : activeTab === 'format'
-              ? 'Format & Layout'
+              ? 'Split Layouts (9:16)'
               : activeTab === 'text'
               ? 'Text & Captions'
               : activeTab === 'line'
@@ -193,14 +381,15 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
           <button
             type="button"
             onClick={() => setIsDrawerOpen(false)}
-            title="Collapse panel"
+            title="Close panel"
+            aria-label="Close panel"
             className="p-1 rounded text-[#888888] hover:text-white hover:bg-[#262626] transition-colors cursor-pointer"
           >
-            <PanelLeftClose className="w-3.5 h-3.5" />
+            <X className="w-3 h-3" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-3 space-y-3.5">
+        <div className="flex-1 overflow-y-auto p-2.5 space-y-3">
           {activeTab === 'videos' && (
             <>
               <div className="grid grid-cols-2 gap-1.5">
@@ -380,54 +569,8 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
 
           {activeTab === 'format' && (
             <div className="space-y-4">
-              {/* Sleek Segmented Aspect Ratio */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-medium text-[#888888]">
-                    Ratio
-                  </span>
-                  <span className="text-[10px] text-[#888888]">
-                    {aspectRatio === '9:16'
-                      ? 'Reels / TikTok'
-                      : aspectRatio === '1:1'
-                      ? 'Square Feed'
-                      : 'YouTube Wide'}
-                  </span>
-                </div>
-                <div className="bg-[#090909] border border-[#262626] rounded-lg p-0.5 grid grid-cols-3 gap-0.5">
-                  {(
-                    [
-                      { id: '9:16', box: 'w-2 h-3' },
-                      { id: '1:1', box: 'w-2.5 h-2.5' },
-                      { id: '16:9', box: 'w-3.5 h-2' },
-                    ] as Array<{ id: AspectRatio; box: string }>
-                  ).map((item) => {
-                    const active = aspectRatio === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => onAspectRatioChange(item.id)}
-                        className={`py-1.5 rounded-md flex items-center justify-center gap-1.5 text-[11px] font-mono-tabular font-medium transition-colors cursor-pointer ${
-                          active
-                            ? 'bg-[#C8FF00] text-[#090909] font-bold'
-                            : 'text-[#888888] hover:text-white hover:bg-[#090909]'
-                        }`}
-                      >
-                        <span
-                          className={`rounded-[2px] border ${item.box} ${
-                            active ? 'border-[#090909]' : 'border-current'
-                          }`}
-                        />
-                        <span>{item.id}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
               {/* Ultra-Compact Pro Layout Tiles + 1-Tap Swap */}
-              <div className="space-y-1.5 pt-2.5 border-t border-[#262626]">
+              <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-medium text-[#888888]">
                     Layout
@@ -767,6 +910,99 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                 </button>
               </div>
 
+              {/* Auto-Captions & Subtitles */}
+              <div className="bg-[#090909] border border-[#262626] rounded-lg p-3 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-white flex items-center gap-1.5">
+                    <Captions className="w-3.5 h-3.5 text-[#C8FF00]" />
+                    Auto-Captions
+                  </span>
+                  <input
+                    ref={subtitleInputRef}
+                    type="file"
+                    accept=".srt,.vtt,text/plain"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = '';
+                      if (!file || !onAddTimedCaptions) return;
+                      const txt = await file.text();
+                      const cues = parseSubtitleFile(txt);
+                      if (cues.length > 0) {
+                        onAddTimedCaptions(cues, 'caption-karaoke');
+                        setCaptionStatus(`Added ${cues.length} subtitle cues.`);
+                      } else {
+                        setCaptionStatus('No valid .srt/.vtt cues found.');
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => subtitleInputRef.current?.click()}
+                    className="px-2 py-0.5 rounded bg-[#191919] hover:bg-[#262626] border border-[#262626] hover:border-[#C8FF00] text-[10px] font-medium text-[#C8FF00] cursor-pointer transition-colors"
+                  >
+                    Import .SRT
+                  </button>
+                </div>
+
+                <textarea
+                  rows={3}
+                  value={captionScript}
+                  onChange={(e) => setCaptionScript(e.target.value)}
+                  placeholder="Paste lines (1 caption per line) or dictate with mic to auto-sync with video speech..."
+                  className="w-full bg-[#141414] border border-[#262626] focus:border-[#C8FF00] rounded-md p-2 text-[11px] text-white placeholder-[#666666] outline-none resize-none"
+                />
+
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleToggleLiveSpeechCaptions}
+                    className={`py-1.5 px-2 rounded-md border text-[10px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer ${
+                      isListeningCaptions
+                        ? 'bg-red-500/20 border-red-500 text-red-400'
+                        : 'bg-[#191919] border-[#262626] text-white hover:border-[#C8FF00]'
+                    }`}
+                  >
+                    <Mic className="w-3 h-3" />
+                    <span>{isListeningCaptions ? 'Stop Mic' : 'Dictate'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isSyncingCaptions || !onGenerateSyncedCaptions}
+                    onClick={async () => {
+                      if (!onGenerateSyncedCaptions) return;
+                      setIsSyncingCaptions(true);
+                      setCaptionStatus('Scanning speech pauses...');
+                      try {
+                        const count = await onGenerateSyncedCaptions(
+                          captionScript,
+                          'caption-karaoke'
+                        );
+                        setCaptionStatus(
+                          count > 0
+                            ? `Synced ${count} captions to audio!`
+                            : 'Add a clip first.'
+                        );
+                        if (count > 0) setCaptionScript('');
+                      } finally {
+                        setIsSyncingCaptions(false);
+                      }
+                    }}
+                    className="py-1.5 px-2 rounded-md bg-[#C8FF00] hover:bg-[#b5e600] disabled:opacity-50 text-[10px] font-bold text-[#090909] flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    <span>{isSyncingCaptions ? 'Syncing...' : 'Auto-Sync'}</span>
+                  </button>
+                </div>
+
+                {captionStatus && (
+                  <p className="text-[10px] text-[#888888] leading-snug">
+                    {captionStatus}
+                  </p>
+                )}
+              </div>
+
               <div className="space-y-2">
                 {TEXT_STYLE_PRESETS.map((preset) => (
                   <button
@@ -814,19 +1050,52 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                   }
                 }}
               />
-              <button
-                type="button"
-                onClick={() => sfxInputRef.current?.click()}
-                className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg bg-[#090909] border border-dashed border-[#262626] hover:border-[#C8FF00] text-xs font-medium text-white transition-colors cursor-pointer"
-              >
-                <Upload className="w-3.5 h-3.5 text-[#C8FF00]" />
-                <span>Upload Audio / SFX</span>
-              </button>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => sfxInputRef.current?.click()}
+                  className="flex flex-col items-center justify-center gap-1 py-2.5 px-2 rounded-lg bg-[#090909] border border-dashed border-[#262626] hover:border-[#C8FF00] text-[11px] font-medium text-white transition-colors cursor-pointer"
+                >
+                  <Upload className="w-3.5 h-3.5 text-[#C8FF00]" />
+                  <span>Upload Audio</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleToggleVoiceRecording}
+                  className={`flex flex-col items-center justify-center gap-1 py-2.5 px-2 rounded-lg border text-[11px] font-semibold transition-colors cursor-pointer ${
+                    isRecordingVoice
+                      ? 'bg-red-500/15 border-red-500 text-red-400'
+                      : 'bg-[#090909] border-[#262626] hover:border-[#C8FF00] text-white'
+                  }`}
+                >
+                  {isRecordingVoice ? (
+                    <>
+                      <Square className="w-3.5 h-3.5 fill-current animate-pulse" />
+                      <span className="font-mono-tabular">
+                        Stop ({voiceSeconds}s)
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Mic className="w-3.5 h-3.5 text-[#C8FF00]" />
+                      <span>Record Voice</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {voiceError && (
+                <p className="text-[10px] text-red-400 leading-snug">
+                  {voiceError}
+                </p>
+              )}
 
               <div className="space-y-2.5">
                 <div className="flex flex-wrap gap-1">
                   {[
                     'All',
+                    'Voiceover',
                     'News',
                     'Transition',
                     'Impact',
@@ -839,7 +1108,11 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                       cat === 'All'
                         ? sfxAssets.length
                         : sfxAssets.filter((s) => s.category === cat).length;
-                    if (cat === 'Uploaded' && count === 0) return null;
+                    if (
+                      (cat === 'Uploaded' || cat === 'Voiceover') &&
+                      count === 0
+                    )
+                      return null;
                     const active = sfxCategory === cat;
                     return (
                       <button
