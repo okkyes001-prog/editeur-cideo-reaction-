@@ -789,7 +789,7 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
               <input
                 ref={emptyViralInputRef}
                 type="file"
-                accept="video/*"
+                accept="video/*,image/*"
                 className="hidden"
                 onChange={(e) => {
                   if (e.target.files?.length && onUploadVideoForTrack) {
@@ -801,7 +801,7 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
               <input
                 ref={emptyReactionInputRef}
                 type="file"
-                accept="video/*"
+                accept="video/*,image/*"
                 className="hidden"
                 onChange={(e) => {
                   if (e.target.files?.length && onUploadVideoForTrack) {
@@ -812,10 +812,10 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
               />
 
               <p className="font-display text-sm font-semibold text-white">
-                Drop your videos to start
+                Drop your media to start
               </p>
               <p className="text-[11px] text-[#888888] mt-1 mb-4 max-w-[210px]">
-                Add a main viral clip and a reaction video to auto-build your split edit.
+                Add a viral clip and a reaction video or photo to auto-build your split edit.
               </p>
 
               <div className="w-full max-w-[210px] space-y-2">
@@ -825,7 +825,7 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
                   className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-[#C8FF00] hover:bg-[#b5e600] text-xs font-bold text-[#090909] transition-colors cursor-pointer"
                 >
                   <Upload className="w-3.5 h-3.5" />
-                  <span>Import Viral Video</span>
+                  <span>Import Viral Media</span>
                 </button>
                 <button
                   type="button"
@@ -833,7 +833,7 @@ export const PreviewStage: React.FC<PreviewStageProps> = ({
                   className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-[#191919] border border-[#262626] hover:border-[#C8FF00] text-xs font-semibold text-white transition-colors cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5 text-[#C8FF00]" />
-                  <span>Add Reaction Video</span>
+                  <span>Add Reaction Video / Photo</span>
                 </button>
               </div>
             </div>

@@ -1,12 +1,8 @@
 import React, { useRef, useState } from 'react';
 import {
-  Layers,
-  Music,
+  Maximize,
   Scissors,
   Trash2,
-  Type,
-  Video,
-  Volume2,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
@@ -49,6 +45,17 @@ interface TimelinePanelProps {
   onDeleteSelected: () => void;
 }
 
+function formatCompactTimecode(seconds: number): string {
+  const safe = Math.max(0, seconds);
+  const mins = Math.floor(safe / 60);
+  const secs = Math.floor(safe % 60);
+  const cs = Math.floor((safe % 1) * 100);
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(
+    2,
+    '0'
+  )}.${String(cs).padStart(2, '0')}`;
+}
+
 export const TimelinePanel: React.FC<TimelinePanelProps> = ({
   currentTime,
   duration,
@@ -67,10 +74,10 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
   onSplitAtPlayhead,
   onDeleteSelected,
 }) => {
-  const [pxPerSec, setPxPerSec] = useState(48);
+  const [pxPerSec, setPxPerSec] = useState(52);
   const trackContainerRef = useRef<HTMLDivElement>(null);
 
-  const totalTimelineWidth = Math.max(760, (duration + 4) * pxPerSec);
+  const totalTimelineWidth = Math.max(680, (duration + 4) * pxPerSec);
 
   const scrubFromClientX = (clientX: number) => {
     const el = trackContainerRef.current;
@@ -90,6 +97,14 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+  };
+
+  const handleFitTimeline = () => {
+    const el = trackContainerRef.current;
+    if (!el || duration <= 0) return;
+    const visibleWidth = Math.max(300, el.clientWidth - 48);
+    const fitPx = Math.max(18, Math.min(100, Math.floor(visibleWidth / (duration + 0.8))));
+    setPxPerSec(fitPx);
   };
 
   const startDragItem = (
@@ -147,24 +162,27 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
     window.addEventListener('pointerup', onUp);
   };
 
-  const ticks: number[] = [];
-  for (let s = 0; s <= Math.ceil(duration + 4); s += 2) {
-    ticks.push(s);
+  const tickStep = pxPerSec < 32 ? 4 : pxPerSec < 64 ? 2 : 1;
+  const majorTicks: number[] = [];
+  for (let s = 0; s <= Math.ceil(duration + 4); s += tickStep) {
+    majorTicks.push(s);
   }
 
   return (
-    <section className="h-[214px] shrink-0 bg-[#191919] border-t border-[#262626] flex flex-col select-none">
-      {/* Compact Timeline Toolbar */}
-      <div className="h-8 px-3.5 border-b border-[#262626] flex items-center justify-between gap-4 shrink-0">
+    <section className="h-[148px] shrink-0 bg-[#090909] border-t border-[#262626] flex flex-col select-none">
+      {/* Pro Ultra-Slim Toolbar (h-7) */}
+      <div className="h-7 px-3 bg-[#141414] border-b border-[#262626] flex items-center justify-between gap-3 shrink-0">
+        {/* Left: Quick Actions & Live Timecode */}
         <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={onSplitAtPlayhead}
             title="Split clip at playhead (S)"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#090909] hover:bg-[#262626] border border-[#262626] text-[11px] font-medium text-white transition-colors cursor-pointer"
+            className="h-5 px-2 rounded bg-[#191919] hover:bg-[#262626] hover:text-[#C8FF00] border border-[#262626] text-[10px] font-medium text-white flex items-center gap-1 transition-colors cursor-pointer"
           >
-            <Scissors className="w-3 h-3" />
+            <Scissors className="w-2.5 h-2.5" />
             <span>Split</span>
+            <span className="text-[9px] text-[#888888] font-mono-tabular">S</span>
           </button>
 
           <button
@@ -172,71 +190,130 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
             onClick={onDeleteSelected}
             disabled={!selection}
             title="Delete selected item (Del)"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#090909] hover:bg-[#262626] border border-[#262626] text-[11px] font-medium text-white disabled:opacity-35 disabled:pointer-events-none transition-colors cursor-pointer"
+            className="h-5 px-2 rounded bg-[#191919] hover:bg-[#262626] hover:text-red-400 border border-[#262626] text-[10px] font-medium text-white disabled:opacity-30 disabled:pointer-events-none flex items-center gap-1 transition-colors cursor-pointer"
           >
-            <Trash2 className="w-3 h-3" />
+            <Trash2 className="w-2.5 h-2.5" />
             <span>Delete</span>
+            <span className="text-[9px] text-[#888888] font-mono-tabular">Del</span>
           </button>
+
+          <div className="h-3.5 w-px bg-[#262626] mx-0.5" />
+
+          {/* Precision Pro Timecode */}
+          <div className="flex items-center gap-1 font-mono-tabular text-[11px] leading-none px-1.5 py-0.5 rounded bg-[#090909] border border-[#262626]">
+            <span className="text-[#C8FF00] font-semibold">
+              {formatCompactTimecode(currentTime)}
+            </span>
+            <span className="text-[#555555]">/</span>
+            <span className="text-[#888888]">
+              {formatCompactTimecode(duration)}
+            </span>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="hidden sm:inline text-[10px] font-mono-tabular text-[#888888]">
-            Drag clips · Trim edges
+        {/* Center: Micro Status / Mode indicator */}
+        <div className="hidden md:flex items-center gap-2 text-[10px] text-[#888888]">
+          <span className="font-mono-tabular">
+            {selection ? (
+              <span className="text-white flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#C8FF00] animate-pulse" />
+                Selected: {selection.kind.toUpperCase()}
+              </span>
+            ) : (
+              'Drag clips · Trim edges · Space to Play'
+            )}
           </span>
-          <div className="flex items-center gap-1 bg-[#090909] border border-[#262626] rounded px-1 py-0.5">
+        </div>
+
+        {/* Right: Pro Zoom & Fit Stepper */}
+        <div className="flex items-center gap-1">
+          <div className="flex items-center bg-[#090909] border border-[#262626] rounded h-5 px-1">
             <button
               type="button"
-              onClick={() => setPxPerSec((z) => Math.max(18, z - 12))}
-              title="Zoom out timeline"
-              className="p-0.5 text-[#888888] hover:text-white cursor-pointer"
+              onClick={() => setPxPerSec((z) => Math.max(18, z - 10))}
+              title="Zoom out"
+              className="p-0.5 text-[#888888] hover:text-[#C8FF00] transition-colors cursor-pointer"
             >
-              <ZoomOut className="w-3 h-3" />
+              <ZoomOut className="w-2.5 h-2.5" />
             </button>
-            <span className="text-[10px] font-mono-tabular text-[#888888] w-8 text-center">
-              {Math.round((pxPerSec / 48) * 100)}%
+            <span className="text-[9px] font-mono-tabular text-white px-1 min-w-[34px] text-center">
+              {Math.round((pxPerSec / 52) * 100)}%
             </span>
             <button
               type="button"
-              onClick={() => setPxPerSec((z) => Math.min(96, z + 12))}
-              title="Zoom in timeline"
-              className="p-0.5 text-[#888888] hover:text-white cursor-pointer"
+              onClick={() => setPxPerSec((z) => Math.min(96, z + 10))}
+              title="Zoom in"
+              className="p-0.5 text-[#888888] hover:text-[#C8FF00] transition-colors cursor-pointer"
             >
-              <ZoomIn className="w-3 h-3" />
+              <ZoomIn className="w-2.5 h-2.5" />
             </button>
           </div>
+
+          <button
+            type="button"
+            onClick={handleFitTimeline}
+            title="Auto-fit timeline to view"
+            className="h-5 px-1.5 rounded bg-[#090909] hover:bg-[#191919] hover:text-[#C8FF00] border border-[#262626] text-[9px] font-mono-tabular font-medium text-[#888888] flex items-center gap-1 transition-colors cursor-pointer"
+          >
+            <Maximize className="w-2.5 h-2.5" />
+            <span>FIT</span>
+          </button>
         </div>
       </div>
 
       {/* Track Labels + Multi-Track Lanes */}
       <div className="flex-1 min-h-0 flex">
-        <div className="w-24 shrink-0 border-r border-[#262626] bg-[#141414] flex flex-col">
-          <div className="h-5 border-b border-[#262626] px-2.5 flex items-center text-[9px] font-mono-tabular text-[#888888]">
-            TRACKS
+        {/* Sleek Compact Track Header Sidebar (w-20) */}
+        <div className="w-20 shrink-0 border-r border-[#262626] bg-[#111111] flex flex-col z-10">
+          <div className="h-4 border-b border-[#262626] px-2 flex items-center justify-between text-[8px] font-mono-tabular font-semibold text-[#888888] tracking-wider uppercase">
+            <span>TRACK</span>
+            <span>NLE</span>
           </div>
-          <div className="flex-1 flex flex-col justify-evenly px-2 py-0.5 gap-0.5">
-            <div className="h-6 flex items-center gap-1.5 text-[11px] text-white">
-              <Type className="w-3 h-3 text-[#C8FF00] shrink-0" />
-              <span className="truncate">Text</span>
+
+          <div className="flex-1 flex flex-col justify-between py-0.5">
+            {/* T1 */}
+            <div className="h-[20px] px-1.5 flex items-center gap-1 text-[10px] text-white">
+              <span className="px-1 py-[1px] rounded-[3px] bg-[#FACC15]/15 border border-[#FACC15]/40 text-[#FACC15] text-[9px] font-mono-tabular font-bold leading-none">
+                T1
+              </span>
+              <span className="text-[10px] text-[#888888] truncate font-medium">Text</span>
             </div>
-            <div className="h-6 flex items-center gap-1.5 text-[11px] text-white">
-              <Layers className="w-3 h-3 text-[#C8FF00] shrink-0" />
-              <span className="truncate">Reaction</span>
+
+            {/* V2 */}
+            <div className="h-[20px] px-1.5 flex items-center gap-1 text-[10px] text-white">
+              <span className="px-1 py-[1px] rounded-[3px] bg-[#38BDF8]/15 border border-[#38BDF8]/40 text-[#38BDF8] text-[9px] font-mono-tabular font-bold leading-none">
+                V2
+              </span>
+              <span className="text-[10px] text-[#888888] truncate font-medium">React</span>
             </div>
-            <div className="h-6 flex items-center gap-1.5 text-[11px] text-white">
-              <Video className="w-3 h-3 text-[#C8FF00] shrink-0" />
-              <span className="truncate">Viral</span>
+
+            {/* V1 */}
+            <div className="h-[20px] px-1.5 flex items-center gap-1 text-[10px] text-white">
+              <span className="px-1 py-[1px] rounded-[3px] bg-[#FB923C]/15 border border-[#FB923C]/40 text-[#FB923C] text-[9px] font-mono-tabular font-bold leading-none">
+                V1
+              </span>
+              <span className="text-[10px] text-[#888888] truncate font-medium">Viral</span>
             </div>
-            <div className="h-6 flex items-center gap-1.5 text-[11px] text-white">
-              <Volume2 className="w-3 h-3 text-[#C8FF00] shrink-0" />
-              <span className="truncate">SFX</span>
+
+            {/* A1 */}
+            <div className="h-[20px] px-1.5 flex items-center gap-1 text-[10px] text-white">
+              <span className="px-1 py-[1px] rounded-[3px] bg-[#34D399]/15 border border-[#34D399]/40 text-[#34D399] text-[9px] font-mono-tabular font-bold leading-none">
+                A1
+              </span>
+              <span className="text-[10px] text-[#888888] truncate font-medium">SFX</span>
             </div>
-            <div className="h-6 flex items-center gap-1.5 text-[11px] text-white">
-              <Music className="w-3 h-3 text-[#C8FF00] shrink-0" />
-              <span className="truncate">Music</span>
+
+            {/* M1 */}
+            <div className="h-[20px] px-1.5 flex items-center gap-1 text-[10px] text-white">
+              <span className="px-1 py-[1px] rounded-[3px] bg-[#C084FC]/15 border border-[#C084FC]/40 text-[#C084FC] text-[9px] font-mono-tabular font-bold leading-none">
+                M1
+              </span>
+              <span className="text-[10px] text-[#888888] truncate font-medium">Music</span>
             </div>
           </div>
         </div>
 
+        {/* Scrollable Tracks Canvas with Razor Playhead */}
         <div
           ref={trackContainerRef}
           className="flex-1 min-w-0 overflow-x-auto overflow-y-hidden relative bg-[#090909]"
@@ -245,32 +322,33 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
             style={{ width: totalTimelineWidth }}
             className="h-full relative flex flex-col"
           >
-            {/* Scrubbable Ruler */}
+            {/* Precision Micro Ruler (h-4) */}
             <div
               onPointerDown={handleRulerPointerDown}
-              className="h-5 border-b border-[#262626] bg-[#191919] relative cursor-ew-resize shrink-0"
+              className="h-4 border-b border-[#262626] bg-[#141414] relative cursor-ew-resize shrink-0 select-none"
             >
-              {ticks.map((sec) => (
+              {majorTicks.map((sec) => (
                 <div
                   key={sec}
                   style={{ left: sec * pxPerSec }}
                   className="absolute top-0 bottom-0 flex flex-col justify-end pointer-events-none"
                 >
-                  <span className="text-[9px] font-mono-tabular text-[#888888] pl-1 leading-none mb-0.5">
+                  <span className="text-[8px] font-mono-tabular text-[#888888] pl-0.5 leading-none mb-0.5">
                     {sec}s
                   </span>
-                  <div className="w-px h-1 bg-[#262626]" />
+                  <div className="w-px h-1.5 bg-[#333333]" />
                 </div>
               ))}
             </div>
 
-            {/* 5 Tracks */}
-            <div className="flex-1 flex flex-col justify-evenly py-0.5 gap-0.5 relative">
-              {/* Text Track */}
-              <div className="h-6 relative bg-[#0D0D11] border-y border-[#18181F]">
+            {/* 5 Pro Tracks Container (5 x 20px) */}
+            <div className="flex-1 flex flex-col justify-between py-0.5 relative">
+              {/* T1 - Text Track */}
+              <div className="h-[20px] relative bg-[#0e0e11] border-y border-[#1a1a22] flex items-center">
                 {textOverlays.map((txt) => {
                   const isSel =
                     selection?.kind === 'text' && selection.id === txt.id;
+                  const itemWidth = Math.max(24, txt.duration * pxPerSec);
                   return (
                     <div
                       key={txt.id}
@@ -286,12 +364,12 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
                       }
                       style={{
                         left: txt.startTime * pxPerSec,
-                        width: Math.max(26, txt.duration * pxPerSec),
+                        width: itemWidth,
                       }}
-                      className={`absolute top-0.5 bottom-0.5 rounded px-2 flex items-center justify-between cursor-grab active:cursor-grabbing overflow-hidden border ${
+                      className={`h-[17px] absolute rounded-[3px] px-1.5 flex items-center justify-between cursor-grab active:cursor-grabbing overflow-hidden border transition-shadow ${
                         isSel
-                          ? 'bg-[#FACC15]/20 border-[#FACC15] text-white'
-                          : 'bg-[#1C190E] border-[#423815] text-[#FDE047]'
+                          ? 'bg-[#FACC15]/25 border-[#FACC15] ring-1 ring-[#FACC15]/50 text-white z-10'
+                          : 'bg-[#201d10] border-[#443b1c] text-[#FDE047] hover:border-[#FACC15]/70'
                       }`}
                     >
                       <div
@@ -305,11 +383,17 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
                             txt.duration
                           )
                         }
-                        className="w-1.5 h-full cursor-ew-resize shrink-0 hover:bg-[#FACC15]/50 -ml-2 mr-1"
+                        title="Trim start"
+                        className="w-1.5 h-full cursor-ew-resize shrink-0 hover:bg-[#FACC15] -ml-1.5 mr-0.5"
                       />
-                      <span className="text-[11px] font-medium truncate flex-1">
+                      <span className="text-[9px] font-medium truncate flex-1 leading-none">
                         {txt.text}
                       </span>
+                      {itemWidth > 55 && (
+                        <span className="text-[8px] font-mono-tabular opacity-75 shrink-0 ml-1">
+                          {txt.duration.toFixed(1)}s
+                        </span>
+                      )}
                       <div
                         onPointerDown={(e) =>
                           startDragItem(
@@ -321,18 +405,20 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
                             txt.duration
                           )
                         }
-                        className="w-1.5 h-full cursor-ew-resize shrink-0 hover:bg-[#FACC15]/50 -mr-2 ml-1"
+                        title="Trim end"
+                        className="w-1.5 h-full cursor-ew-resize shrink-0 hover:bg-[#FACC15] -mr-1.5 ml-0.5"
                       />
                     </div>
                   );
                 })}
               </div>
 
-              {/* Reaction Video Track (V2) */}
-              <div className="h-6 relative bg-[#0D0D11] border-y border-[#18181F]">
+              {/* V2 - Reaction Track */}
+              <div className="h-[20px] relative bg-[#0a1114] border-y border-[#142229] flex items-center">
                 {overlayClips.map((clip) => {
                   const isSel =
                     selection?.kind === 'clip' && selection.id === clip.id;
+                  const itemWidth = Math.max(28, clip.duration * pxPerSec);
                   return (
                     <div
                       key={clip.id}
@@ -348,12 +434,12 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
                       }
                       style={{
                         left: clip.startTime * pxPerSec,
-                        width: Math.max(32, clip.duration * pxPerSec),
+                        width: itemWidth,
                       }}
-                      className={`absolute top-0.5 bottom-0.5 rounded px-2 flex items-center justify-between cursor-grab active:cursor-grabbing overflow-hidden border ${
+                      className={`h-[17px] absolute rounded-[3px] px-1.5 flex items-center justify-between cursor-grab active:cursor-grabbing overflow-hidden border transition-shadow ${
                         isSel
-                          ? 'bg-[#06B6D4]/25 border-[#06B6D4] text-white'
-                          : 'bg-[#0F2026] border-[#1A4352] text-[#A5F3FC]'
+                          ? 'bg-[#38BDF8]/25 border-[#38BDF8] ring-1 ring-[#38BDF8]/50 text-white z-10'
+                          : 'bg-[#0e2129] border-[#1b4352] text-[#A5F3FC] hover:border-[#38BDF8]/70'
                       }`}
                     >
                       <div
@@ -367,11 +453,17 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
                             clip.duration
                           )
                         }
-                        className="w-1.5 h-full cursor-ew-resize shrink-0 hover:bg-[#06B6D4]/60 -ml-2 mr-1"
+                        title="Trim start"
+                        className="w-1.5 h-full cursor-ew-resize shrink-0 hover:bg-[#38BDF8] -ml-1.5 mr-0.5"
                       />
-                      <span className="text-[11px] font-medium truncate flex-1">
+                      <span className="text-[9px] font-medium truncate flex-1 leading-none">
                         {clip.label}
                       </span>
+                      {itemWidth > 55 && (
+                        <span className="text-[8px] font-mono-tabular opacity-75 shrink-0 ml-1">
+                          {clip.duration.toFixed(1)}s
+                        </span>
+                      )}
                       <div
                         onPointerDown={(e) =>
                           startDragItem(
@@ -383,18 +475,20 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
                             clip.duration
                           )
                         }
-                        className="w-1.5 h-full cursor-ew-resize shrink-0 hover:bg-[#06B6D4]/60 -mr-2 ml-1"
+                        title="Trim end"
+                        className="w-1.5 h-full cursor-ew-resize shrink-0 hover:bg-[#38BDF8] -mr-1.5 ml-0.5"
                       />
                     </div>
                   );
                 })}
               </div>
 
-              {/* Viral Base Track (V1) */}
-              <div className="h-6 relative bg-[#0D0D11] border-y border-[#18181F]">
+              {/* V1 - Viral Base Track */}
+              <div className="h-[20px] relative bg-[#130d0a] border-y border-[#291b14] flex items-center">
                 {baseClips.map((clip) => {
                   const isSel =
                     selection?.kind === 'clip' && selection.id === clip.id;
+                  const itemWidth = Math.max(28, clip.duration * pxPerSec);
                   return (
                     <div
                       key={clip.id}
@@ -410,12 +504,12 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
                       }
                       style={{
                         left: clip.startTime * pxPerSec,
-                        width: Math.max(32, clip.duration * pxPerSec),
+                        width: itemWidth,
                       }}
-                      className={`absolute top-0.5 bottom-0.5 rounded px-2 flex items-center justify-between cursor-grab active:cursor-grabbing overflow-hidden border ${
+                      className={`h-[17px] absolute rounded-[3px] px-1.5 flex items-center justify-between cursor-grab active:cursor-grabbing overflow-hidden border transition-shadow ${
                         isSel
-                          ? 'bg-[#F97316]/25 border-[#F97316] text-white'
-                          : 'bg-[#1D1512] border-[#42281B] text-[#FED7AA]'
+                          ? 'bg-[#FB923C]/25 border-[#FB923C] ring-1 ring-[#FB923C]/50 text-white z-10'
+                          : 'bg-[#291710] border-[#522c1b] text-[#FED7AA] hover:border-[#FB923C]/70'
                       }`}
                     >
                       <div
@@ -429,11 +523,17 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
                             clip.duration
                           )
                         }
-                        className="w-1.5 h-full cursor-ew-resize shrink-0 hover:bg-[#F97316]/60 -ml-2 mr-1"
+                        title="Trim start"
+                        className="w-1.5 h-full cursor-ew-resize shrink-0 hover:bg-[#FB923C] -ml-1.5 mr-0.5"
                       />
-                      <span className="text-[11px] font-medium truncate flex-1">
+                      <span className="text-[9px] font-medium truncate flex-1 leading-none">
                         {clip.label}
                       </span>
+                      {itemWidth > 55 && (
+                        <span className="text-[8px] font-mono-tabular opacity-75 shrink-0 ml-1">
+                          {clip.duration.toFixed(1)}s
+                        </span>
+                      )}
                       <div
                         onPointerDown={(e) =>
                           startDragItem(
@@ -445,18 +545,20 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
                             clip.duration
                           )
                         }
-                        className="w-1.5 h-full cursor-ew-resize shrink-0 hover:bg-[#F97316]/60 -mr-2 ml-1"
+                        title="Trim end"
+                        className="w-1.5 h-full cursor-ew-resize shrink-0 hover:bg-[#FB923C] -mr-1.5 ml-0.5"
                       />
                     </div>
                   );
                 })}
               </div>
 
-              {/* Sound Effects Track (A1) */}
-              <div className="h-6 relative bg-[#0D0D11] border-y border-[#18181F]">
+              {/* A1 - SFX Track */}
+              <div className="h-[20px] relative bg-[#09120e] border-y border-[#12261d] flex items-center">
                 {soundEffects.map((sfx) => {
                   const isSel =
                     selection?.kind === 'sfx' && selection.id === sfx.id;
+                  const itemWidth = Math.max(36, sfx.duration * pxPerSec);
                   return (
                     <div
                       key={sfx.id}
@@ -472,15 +574,15 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
                       }
                       style={{
                         left: sfx.startTime * pxPerSec,
-                        width: Math.max(44, sfx.duration * pxPerSec),
+                        width: itemWidth,
                       }}
-                      className={`absolute top-0.5 bottom-0.5 rounded px-2 flex items-center cursor-grab active:cursor-grabbing overflow-hidden border ${
+                      className={`h-[17px] absolute rounded-[3px] px-1.5 flex items-center cursor-grab active:cursor-grabbing overflow-hidden border transition-shadow ${
                         isSel
-                          ? 'bg-[#10B981]/25 border-[#10B981] text-white'
-                          : 'bg-[#0E221B] border-[#1B4A38] text-[#6EE7B7]'
+                          ? 'bg-[#34D399]/25 border-[#34D399] ring-1 ring-[#34D399]/50 text-white z-10'
+                          : 'bg-[#0f261d] border-[#1d4f3b] text-[#6EE7B7] hover:border-[#34D399]/70'
                       }`}
                     >
-                      <span className="text-[10px] font-medium truncate">
+                      <span className="text-[9px] font-medium truncate leading-none">
                         {sfx.label}
                       </span>
                     </div>
@@ -488,11 +590,12 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
                 })}
               </div>
 
-              {/* Background Music Track (M1) */}
-              <div className="h-6 relative bg-[#0D0D11] border-y border-[#18181F]">
+              {/* M1 - Music Track */}
+              <div className="h-[20px] relative bg-[#120a1c] border-y border-[#25143a] flex items-center">
                 {musicClips.map((mus) => {
                   const isSel =
                     selection?.kind === 'music' && selection.id === mus.id;
+                  const itemWidth = Math.max(40, mus.duration * pxPerSec);
                   return (
                     <div
                       key={mus.id}
@@ -508,12 +611,12 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
                       }
                       style={{
                         left: mus.startTime * pxPerSec,
-                        width: Math.max(48, mus.duration * pxPerSec),
+                        width: itemWidth,
                       }}
-                      className={`absolute top-0.5 bottom-0.5 rounded px-2 flex items-center justify-between cursor-grab active:cursor-grabbing overflow-hidden border ${
+                      className={`h-[17px] absolute rounded-[3px] px-1.5 flex items-center justify-between cursor-grab active:cursor-grabbing overflow-hidden border transition-shadow ${
                         isSel
-                          ? 'bg-[#A855F7]/25 border-[#A855F7] text-white'
-                          : 'bg-[#1B1229] border-[#3B2163] text-[#D8B4FE]'
+                          ? 'bg-[#C084FC]/25 border-[#C084FC] ring-1 ring-[#C084FC]/50 text-white z-10'
+                          : 'bg-[#251438] border-[#4c2973] text-[#D8B4FE] hover:border-[#C084FC]/70'
                       }`}
                     >
                       <div
@@ -527,11 +630,17 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
                             mus.duration
                           )
                         }
-                        className="w-1.5 h-full cursor-ew-resize shrink-0 hover:bg-[#A855F7]/60 -ml-2 mr-1"
+                        title="Trim start"
+                        className="w-1.5 h-full cursor-ew-resize shrink-0 hover:bg-[#C084FC] -ml-1.5 mr-0.5"
                       />
-                      <span className="text-[10px] font-medium truncate flex-1">
+                      <span className="text-[9px] font-medium truncate flex-1 leading-none">
                         {mus.label}
                       </span>
+                      {itemWidth > 55 && (
+                        <span className="text-[8px] font-mono-tabular opacity-75 shrink-0 ml-1">
+                          {mus.duration.toFixed(1)}s
+                        </span>
+                      )}
                       <div
                         onPointerDown={(e) =>
                           startDragItem(
@@ -543,7 +652,8 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
                             mus.duration
                           )
                         }
-                        className="w-1.5 h-full cursor-ew-resize shrink-0 hover:bg-[#A855F7]/60 -mr-2 ml-1"
+                        title="Trim end"
+                        className="w-1.5 h-full cursor-ew-resize shrink-0 hover:bg-[#C084FC] -mr-1.5 ml-0.5"
                       />
                     </div>
                   );
@@ -551,12 +661,13 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
               </div>
             </div>
 
-            {/* Signal Electric Lime Playhead Needle */}
+            {/* Signal Electric Lime Playhead Laser Needle */}
             <div
               style={{ left: currentTime * pxPerSec }}
-              className="absolute top-0 bottom-0 w-px bg-[#C8FF00] pointer-events-none z-20"
+              className="absolute top-0 bottom-0 w-px bg-[#C8FF00] pointer-events-none z-30"
             >
-              <div className="w-2.5 h-2.5 bg-[#C8FF00] -translate-x-1/2 rotate-45 -mt-0.5 rounded-[1px]" />
+              {/* Diamond Arrowhead at Ruler */}
+              <div className="w-2.5 h-2.5 bg-[#C8FF00] -translate-x-[4.5px] rotate-45 -mt-0.5 rounded-[1px] shadow-sm" />
             </div>
           </div>
         </div>

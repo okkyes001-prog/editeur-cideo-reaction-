@@ -204,7 +204,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                 <input
                   ref={viralInputRef}
                   type="file"
-                  accept="video/*"
+                  accept="video/*,image/*"
                   className="hidden"
                   onChange={(e) => {
                     if (e.target.files && e.target.files.length > 0) {
@@ -242,7 +242,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                       Viral (V1)
                     </p>
                     <p className="text-[10px] text-[#888888]">
-                      Drop or click
+                      Video or Image
                     </p>
                   </div>
                 </button>
@@ -250,7 +250,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                 <input
                   ref={reactionInputRef}
                   type="file"
-                  accept="video/*"
+                  accept="video/*,image/*"
                   className="hidden"
                   onChange={(e) => {
                     if (e.target.files && e.target.files.length > 0) {
@@ -288,7 +288,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                       Reaction (V2)
                     </p>
                     <p className="text-[10px] text-[#888888]">
-                      Drop or click
+                      Video or Image
                     </p>
                   </div>
                 </button>
@@ -410,9 +410,9 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
               </div>
 
               {/* Ultra-Compact Pro Layout Tiles + 1-Tap Swap */}
-              <div className="space-y-1.5 pt-2.5 border-t border-[#22222A]">
+              <div className="space-y-1.5 pt-2.5 border-t border-[#262626]">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-medium text-[#A1A1AA]">
+                  <span className="text-[11px] font-medium text-[#888888]">
                     Layout
                   </span>
                   {onSwapTracks && canSwapTracks && (
@@ -420,7 +420,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                       type="button"
                       onClick={onSwapTracks}
                       title="Swap Viral & Reaction positions"
-                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#14141A] hover:bg-[#1B1B22] border border-[#27272F] hover:border-[#06B6D4] text-[10px] font-medium text-[#06B6D4] transition-colors cursor-pointer"
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#090909] hover:bg-[#262626] border border-[#262626] hover:border-[#C8FF00] text-[10px] font-medium text-[#C8FF00] transition-colors cursor-pointer"
                     >
                       <ArrowUpDown className="w-2.5 h-2.5" />
                       <span>Swap</span>
@@ -439,13 +439,13 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                         onClick={() => onApplyOverlayLayout(preset.id)}
                         className={`flex items-center gap-2 p-1.5 rounded-lg border text-left transition-colors cursor-pointer ${
                           isActive
-                            ? 'bg-[#1B1B22] border-[#F97316]'
-                            : 'bg-[#14141A] border-[#22222A] hover:border-[#3F3F46]'
+                            ? 'bg-[#191919] border-[#C8FF00]'
+                            : 'bg-[#090909] border-[#262626] hover:border-[#888888]'
                         }`}
                       >
-                        <div className="w-5 h-7 shrink-0 rounded-[3px] bg-[#09090B] border border-[#27272F] relative overflow-hidden">
+                        <div className="w-5 h-7 shrink-0 rounded-[3px] bg-[#090909] border border-[#262626] relative overflow-hidden">
                           <div
-                            className="absolute bg-[#27272F]"
+                            className="absolute bg-[#262626]"
                             style={{
                               left: `${
                                 preset.baseBounds.x -
@@ -464,8 +464,8 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                               preset.overlayBounds.feather
                                 ? ''
                                 : isActive
-                                ? 'bg-[#F97316]/75 border border-[#F97316]'
-                                : 'bg-[#06B6D4]/45 border border-[#06B6D4]'
+                                ? 'bg-[#C8FF00]/75 border border-[#C8FF00]'
+                                : 'bg-[#C8FF00]/30 border border-[#C8FF00]/60'
                             }`}
                             style={{
                               left: `${
@@ -479,11 +479,11 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                               width: `${preset.overlayBounds.widthPct}%`,
                               height: `${preset.overlayBounds.heightPct}%`,
                               background: preset.overlayBounds.feather
-                                ? 'linear-gradient(to bottom, rgba(6,182,212,0.75) 0%, rgba(6,182,212,0) 100%)'
+                                ? 'linear-gradient(to bottom, rgba(200,255,0,0.75) 0%, rgba(200,255,0,0) 100%)'
                                 : undefined,
                               borderRadius:
                                 preset.overlayBounds.borderRadius >= 900
-                                  ? '9999px'
+                                    ? '9999px'
                                   : `${Math.min(
                                       3,
                                       preset.overlayBounds.borderRadius / 6
@@ -501,13 +501,13 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
               </div>
 
               {/* Compact Transitions */}
-              <div className="space-y-1.5 pt-2.5 border-t border-[#22222A]">
+              <div className="space-y-1.5 pt-2.5 border-t border-[#262626]">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-medium text-[#A1A1AA]">
+                  <span className="text-[11px] font-medium text-[#888888]">
                     Transition
                   </span>
                   {!activeTransition && (
-                    <span className="text-[10px] text-[#71717A]">
+                    <span className="text-[10px] text-[#888888]">
                       Select clip
                     </span>
                   )}
@@ -523,8 +523,8 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                         onClick={() => onApplyTransitionToSelected(tr.id)}
                         className={`px-2 py-1.5 rounded-md border text-left text-[11px] font-medium truncate transition-colors cursor-pointer ${
                           isActive
-                            ? 'bg-[#1B1B22] border-[#F97316] text-white'
-                            : 'bg-[#14141A] border-[#22222A] hover:border-[#3F3F46] text-[#E4E4E7]'
+                            ? 'bg-[#191919] border-[#C8FF00] text-white'
+                            : 'bg-[#090909] border-[#262626] hover:border-[#888888] text-white'
                         }`}
                       >
                         {tr.label}
@@ -538,12 +538,12 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
 
           {activeTab === 'line' && onUpdateSeamDivider && (
             <div className="space-y-4">
-              <div className="bg-[#14141A] border border-[#22222A] rounded-lg p-3 flex items-center justify-between gap-2">
+              <div className="bg-[#090909] border border-[#262626] rounded-lg p-3 flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-xs font-semibold text-white">
                     Hide Split Line
                   </p>
-                  <p className="text-[10px] text-[#71717A] mt-0.5">
+                  <p className="text-[10px] text-[#888888] mt-0.5">
                     Blur & color fade between videos
                   </p>
                 </div>
@@ -554,8 +554,8 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                   }
                   className={`px-2.5 py-1 rounded-md text-[10px] font-semibold shrink-0 transition-colors cursor-pointer ${
                     seamDivider.enabled
-                      ? 'bg-[#F97316] text-white'
-                      : 'bg-[#1B1B22] text-[#A1A1AA] hover:text-white'
+                      ? 'bg-[#C8FF00] text-[#090909]'
+                      : 'bg-[#262626] text-[#888888] hover:text-white'
                   }`}
                 >
                   {seamDivider.enabled ? 'ON' : 'OFF'}
@@ -563,7 +563,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
               </div>
 
               <div className="space-y-2">
-                <p className="text-[11px] font-medium text-[#A1A1AA]">
+                <p className="text-[11px] font-medium text-[#888888]">
                   Style Presets
                 </p>
                 <div className="grid grid-cols-2 gap-1.5">
@@ -590,8 +590,8 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                         }
                         className={`rounded-lg p-2 border text-left transition-colors cursor-pointer space-y-1.5 ${
                           active
-                            ? 'bg-[#1B1B22] border-[#F97316]'
-                            : 'bg-[#14141A] border-[#22222A] hover:border-[#3F3F46]'
+                            ? 'bg-[#191919] border-[#C8FF00]'
+                            : 'bg-[#090909] border-[#262626] hover:border-[#888888]'
                         }`}
                       >
                         <div
@@ -610,10 +610,10 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
               </div>
 
               {seamDivider.enabled && (
-                <div className="space-y-3 pt-2 border-t border-[#22222A]">
+                <div className="space-y-3 pt-2 border-t border-[#262626]">
                   <div>
                     <div className="flex justify-between text-[11px] mb-1">
-                      <span className="text-[#A1A1AA]">Blur</span>
+                      <span className="text-[#888888]">Blur</span>
                       <span className="font-mono-tabular text-white">
                         {seamDivider.blurAmount}px
                       </span>
@@ -628,13 +628,13 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                           blurAmount: Number(e.target.value),
                         })
                       }
-                      className="w-full"
+                      className="w-full accent-[#C8FF00]"
                     />
                   </div>
 
                   <div>
                     <div className="flex justify-between text-[11px] mb-1">
-                      <span className="text-[#A1A1AA]">Height</span>
+                      <span className="text-[#888888]">Height</span>
                       <span className="font-mono-tabular text-white">
                         {seamDivider.thickness}%
                       </span>
@@ -649,13 +649,13 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                           thickness: Number(e.target.value),
                         })
                       }
-                      className="w-full"
+                      className="w-full accent-[#C8FF00]"
                     />
                   </div>
 
                   <div>
                     <div className="flex justify-between text-[11px] mb-1">
-                      <span className="text-[#A1A1AA]">Position</span>
+                      <span className="text-[#888888]">Position</span>
                       <span className="font-mono-tabular text-white">
                         {seamDivider.positionY}%
                       </span>
@@ -670,13 +670,13 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                           positionY: Number(e.target.value),
                         })
                       }
-                      className="w-full"
+                      className="w-full accent-[#C8FF00]"
                     />
                   </div>
 
                   <div>
                     <div className="flex justify-between text-[11px] mb-1">
-                      <span className="text-[#A1A1AA]">Color Fade</span>
+                      <span className="text-[#888888]">Color Fade</span>
                       <span className="font-mono-tabular text-white">
                         {Math.round(seamDivider.opacity * 100)}%
                       </span>
@@ -691,12 +691,12 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                           opacity: Number(e.target.value) / 100,
                         })
                       }
-                      className="w-full"
+                      className="w-full accent-[#C8FF00]"
                     />
                   </div>
 
                   <div className="flex items-center justify-between gap-2 pt-1">
-                    <span className="text-[11px] text-[#A1A1AA]">Colors</span>
+                    <span className="text-[11px] text-[#888888]">Colors</span>
                     <div className="flex items-center gap-1.5">
                       <input
                         type="color"
@@ -705,7 +705,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                           onUpdateSeamDivider({ color: e.target.value })
                         }
                         title="Start color"
-                        className="w-7 h-6 rounded border border-[#27272F] bg-transparent cursor-pointer"
+                        className="w-7 h-6 rounded border border-[#262626] bg-transparent cursor-pointer"
                       />
                       <input
                         type="color"
@@ -716,7 +716,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                           })
                         }
                         title="End color"
-                        className="w-7 h-6 rounded border border-[#27272F] bg-transparent cursor-pointer"
+                        className="w-7 h-6 rounded border border-[#262626] bg-transparent cursor-pointer"
                       />
                     </div>
                   </div>
@@ -733,7 +733,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                   value={quickText}
                   onChange={(e) => setQuickText(e.target.value)}
                   placeholder="Write caption..."
-                  className="flex-1 min-w-0 bg-[#14141A] border border-[#27272F] focus:border-[#F97316] rounded-lg px-2.5 py-2 text-xs text-white placeholder-[#71717A] outline-none"
+                  className="flex-1 min-w-0 bg-[#090909] border border-[#262626] focus:border-[#C8FF00] rounded-lg px-2.5 py-2 text-xs text-white placeholder-[#888888] outline-none"
                 />
                 <button
                   type="button"
@@ -744,7 +744,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                     );
                     setQuickText('');
                   }}
-                  className="px-3 py-2 rounded-lg bg-[#F97316] hover:bg-[#EA580C] text-xs font-semibold text-white shrink-0 cursor-pointer"
+                  className="px-3 py-2 rounded-lg bg-[#C8FF00] hover:bg-[#b5e600] text-xs font-bold text-[#090909] shrink-0 cursor-pointer transition-colors"
                 >
                   Add
                 </button>
@@ -761,7 +761,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                         quickText.trim() || preset.sample
                       )
                     }
-                    className="w-full bg-[#14141A] border border-[#22222A] hover:border-[#F97316] rounded-lg p-3 text-left transition-colors cursor-pointer flex items-center justify-between gap-2"
+                    className="w-full bg-[#090909] border border-[#262626] hover:border-[#C8FF00] rounded-lg p-3 text-left transition-colors cursor-pointer flex items-center justify-between gap-2"
                   >
                     <span
                       className="inline-block px-2 py-0.5 rounded text-xs font-bold tracking-tight truncate"
@@ -775,7 +775,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                     >
                       {preset.sample}
                     </span>
-                    <Plus className="w-3.5 h-3.5 text-[#71717A] shrink-0" />
+                    <Plus className="w-3.5 h-3.5 text-[#888888] shrink-0" />
                   </button>
                 ))}
               </div>
@@ -800,9 +800,9 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
               <button
                 type="button"
                 onClick={() => sfxInputRef.current?.click()}
-                className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg bg-[#14141A] border border-dashed border-[#343440] hover:border-[#10B981] text-xs font-medium text-white transition-colors cursor-pointer"
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg bg-[#090909] border border-dashed border-[#262626] hover:border-[#C8FF00] text-xs font-medium text-white transition-colors cursor-pointer"
               >
-                <Upload className="w-3.5 h-3.5 text-[#10B981]" />
+                <Upload className="w-3.5 h-3.5 text-[#C8FF00]" />
                 <span>Upload Audio / SFX</span>
               </button>
 
@@ -831,8 +831,8 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                         onClick={() => setSfxCategory(cat)}
                         className={`px-2 py-1 rounded text-[10px] font-medium transition-colors cursor-pointer ${
                           active
-                            ? 'bg-[#10B981] text-[#09090B] font-semibold'
-                            : 'bg-[#14141A] border border-[#22222A] text-[#A1A1AA] hover:text-white'
+                            ? 'bg-[#C8FF00] text-[#090909] font-bold'
+                            : 'bg-[#090909] border border-[#262626] text-[#888888] hover:text-white'
                         }`}
                       >
                         {cat}
@@ -848,7 +848,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                   .map((sfx) => (
                   <div
                     key={sfx.id}
-                    className="bg-[#14141A] border border-[#22222A] rounded-lg px-3 py-2.5 flex items-center justify-between gap-2"
+                    className="bg-[#090909] border border-[#262626] rounded-lg px-3 py-2.5 flex items-center justify-between gap-2"
                   >
                     <button
                       type="button"
@@ -856,12 +856,12 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                       className="min-w-0 flex-1 text-left flex items-center gap-2.5 cursor-pointer group"
                       title="Preview sound effect"
                     >
-                      <Volume2 className="w-3.5 h-3.5 text-[#10B981] shrink-0 group-hover:scale-110 transition-transform" />
+                      <Volume2 className="w-3.5 h-3.5 text-[#C8FF00] shrink-0 group-hover:scale-110 transition-transform" />
                       <div className="min-w-0">
                         <p className="text-xs font-medium text-white truncate">
                           {sfx.name}
                         </p>
-                        <p className="text-[10px] text-[#71717A] font-mono-tabular">
+                        <p className="text-[10px] text-[#888888] font-mono-tabular">
                           {sfx.duration.toFixed(2)}s · {sfx.category}
                         </p>
                       </div>
@@ -873,7 +873,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                         playSfxNow(sfx, 0.75);
                         onAddSoundEffect(sfx);
                       }}
-                      className="px-2.5 py-1 rounded bg-[#1B1B22] hover:bg-[#10B981] hover:text-[#09090B] text-[11px] font-semibold text-white shrink-0 transition-colors cursor-pointer"
+                      className="px-2.5 py-1 rounded bg-[#262626] hover:bg-[#C8FF00] hover:text-[#090909] text-[11px] font-semibold text-white shrink-0 transition-colors cursor-pointer"
                     >
                       + Add
                     </button>
@@ -901,9 +901,9 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
               <button
                 type="button"
                 onClick={() => musicInputRef.current?.click()}
-                className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg bg-[#14141A] border border-dashed border-[#343440] hover:border-[#A855F7] text-xs font-medium text-white transition-colors cursor-pointer"
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg bg-[#090909] border border-dashed border-[#262626] hover:border-[#C8FF00] text-xs font-medium text-white transition-colors cursor-pointer"
               >
-                <Upload className="w-3.5 h-3.5 text-[#A855F7]" />
+                <Upload className="w-3.5 h-3.5 text-[#C8FF00]" />
                 <span>Upload Background Music</span>
               </button>
 
@@ -932,8 +932,8 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                         onClick={() => setMusicMood(mood)}
                         className={`px-2 py-1 rounded text-[10px] font-medium transition-colors cursor-pointer ${
                           active
-                            ? 'bg-[#A855F7] text-white font-semibold'
-                            : 'bg-[#14141A] border border-[#22222A] text-[#A1A1AA] hover:text-white'
+                            ? 'bg-[#C8FF00] text-[#090909] font-bold'
+                            : 'bg-[#090909] border border-[#262626] text-[#888888] hover:text-white'
                         }`}
                       >
                         {mood}
@@ -951,8 +951,8 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                         key={track.id}
                         className={`rounded-lg px-3 py-2.5 flex items-center justify-between gap-2 border transition-colors ${
                           isPreviewing
-                            ? 'bg-[#1C1629] border-[#A855F7]/60'
-                            : 'bg-[#14141A] border-[#22222A]'
+                            ? 'bg-[#191919] border-[#C8FF00]'
+                            : 'bg-[#090909] border-[#262626]'
                         }`}
                       >
                         <button
@@ -973,8 +973,8 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                           <div
                             className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 transition-colors ${
                               isPreviewing
-                                ? 'bg-[#A855F7] text-white'
-                                : 'bg-[#1D1D25] text-[#A855F7] group-hover:bg-[#A855F7]/20'
+                                ? 'bg-[#C8FF00] text-[#090909]'
+                                : 'bg-[#262626] text-[#C8FF00] group-hover:bg-[#C8FF00]/20'
                             }`}
                           >
                             {isPreviewing ? (
@@ -987,7 +987,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                             <p className="text-xs font-medium text-white truncate">
                               {track.name}
                             </p>
-                            <p className="text-[10px] text-[#71717A]">
+                            <p className="text-[10px] text-[#888888]">
                               {track.mood}
                             </p>
                           </div>
@@ -1000,7 +1000,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                             setPreviewMusicId(null);
                             onAddMusicClip(track);
                           }}
-                          className="px-2.5 py-1 rounded bg-[#1B1B22] hover:bg-[#A855F7] text-[11px] font-semibold text-white shrink-0 transition-colors cursor-pointer"
+                          className="px-2.5 py-1 rounded bg-[#262626] hover:bg-[#C8FF00] hover:text-[#090909] text-[11px] font-semibold text-white shrink-0 transition-colors cursor-pointer"
                         >
                           + Add
                         </button>

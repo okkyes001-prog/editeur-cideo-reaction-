@@ -86,6 +86,7 @@ export interface MediaAsset {
   id: string;
   name: string;
   kind: 'uploaded' | 'builtin';
+  mediaType?: 'video' | 'image';
   srcUrl: string;
   thumbnailUrl: string;
   duration: number;

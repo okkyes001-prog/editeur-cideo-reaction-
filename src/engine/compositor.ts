@@ -548,6 +548,11 @@ function renderVideoClipLayer(
           mh,
           'cover'
         );
+      } else if (asset.kind === 'uploaded' && asset.mediaType === 'image') {
+        const img = preloadImage(asset.srcUrl);
+        if (img && img.complete && img.naturalWidth > 0) {
+          drawCoverSource(targetCtx, img, mx, my, mw, mh, 'cover');
+        }
       } else {
         const video = getOrCreateVideoElement(asset, 0, clip.speed);
         if (video && video.readyState >= 2) {
@@ -570,6 +575,106 @@ function renderVideoClipLayer(
         mh,
         clip.fit
       );
+    } else if (asset.kind === 'uploaded' && asset.mediaType === 'image') {
+      const img = preloadImage(asset.srcUrl);
+      if (img && img.complete && img.naturalWidth > 0) {
+        const removalMode = clip.bgRemovalMode ?? 'none';
+        if (removalMode !== 'none') {
+          const replaceMode = clip.bgReplaceMode ?? 'transparent';
+
+          if (replaceMode === 'blur') {
+            targetCtx.save();
+            targetCtx.filter = 'blur(22px) brightness(0.88)';
+            drawCoverSource(targetCtx, img, mx, my, mw, mh, 'cover');
+            targetCtx.restore();
+          } else if (replaceMode === 'solid') {
+            targetCtx.fillStyle = clip.bgColor || '#18181B';
+            targetCtx.fillRect(ox, oy, w, h);
+          } else if (replaceMode === 'gradient') {
+            const bgGrad = targetCtx.createLinearGradient(
+              ox,
+              oy,
+              ox + w,
+              oy + h
+            );
+            bgGrad.addColorStop(0, clip.bgColor || '#0F172A');
+            bgGrad.addColorStop(1, clip.bgSecondaryColor || '#4C1D95');
+            targetCtx.fillStyle = bgGrad;
+            targetCtx.fillRect(ox, oy, w, h);
+          } else if (replaceMode === 'image') {
+            const bgImg = clip.bgImageUrl
+              ? preloadImage(clip.bgImageUrl)
+              : null;
+            if (bgImg && bgImg.complete && bgImg.naturalWidth > 0) {
+              drawCoverSource(targetCtx, bgImg, ox, oy, w, h, 'cover');
+            } else {
+              targetCtx.fillStyle = '#111827';
+              targetCtx.fillRect(ox, oy, w, h);
+            }
+          }
+
+          const maskCanvas =
+            removalMode === 'ai'
+              ? requestAiMaskUpdate({
+                  clipId: clip.id,
+                  video: img,
+                  videoTime: 0,
+                  threshold: clip.bgThreshold ?? 0.5,
+                  softness: clip.bgEdgeSoftness ?? 0.35,
+                  invertMask: clip.bgInvertMask ?? false,
+                })
+              : buildChromaKeyMask(
+                  img,
+                  clip.chromaColor ?? '#00FF00',
+                  clip.chromaTolerance ?? 0.28,
+                  clip.bgEdgeSoftness ?? 0.3
+                );
+
+          if (maskCanvas) {
+            const fgCanvas = getCutoutFgCanvas(mw, mh);
+            const fgCtx = fgCanvas.getContext('2d');
+            if (fgCtx) {
+              fgCtx.save();
+              fgCtx.globalCompositeOperation = 'source-over';
+              fgCtx.filter = 'none';
+              fgCtx.clearRect(0, 0, fgCanvas.width, fgCanvas.height);
+              drawCoverSource(
+                fgCtx,
+                img,
+                0,
+                0,
+                fgCanvas.width,
+                fgCanvas.height,
+                clip.fit
+              );
+              fgCtx.globalCompositeOperation = 'destination-in';
+              const softPx = Math.max(
+                0,
+                (clip.bgEdgeSoftness ?? 0.35) * 2.4
+              );
+              if (softPx > 0.2) {
+                fgCtx.filter = `blur(${softPx.toFixed(1)}px)`;
+              }
+              drawCoverSource(
+                fgCtx,
+                maskCanvas,
+                0,
+                0,
+                fgCanvas.width,
+                fgCanvas.height,
+                clip.fit
+              );
+              fgCtx.restore();
+
+              targetCtx.drawImage(fgCanvas, mx, my, mw, mh);
+            }
+          } else {
+            drawCoverSource(targetCtx, img, mx, my, mw, mh, clip.fit);
+          }
+        } else {
+          drawCoverSource(targetCtx, img, mx, my, mw, mh, clip.fit);
+        }
+      }
     } else if (asset.kind === 'uploaded') {
       const video = getOrCreateVideoElement(asset, clip.volume, clip.speed);
       if (video) {
@@ -1354,11 +1459,15 @@ export async function exportTimelineToVideo(params: {
   const videoStream = canvas.captureStream(fps);
   const combinedStream = new MediaStream(videoStream.getVideoTracks());
 
-  // Preload custom replacement background images before rendering export frames
+  // Preload custom replacement background images and uploaded images before rendering export frames
   const bgUrls = new Set<string>();
   [...baseClips, ...overlayClips].forEach((c) => {
     if (c.bgReplaceMode === 'image' && c.bgImageUrl) {
       bgUrls.add(c.bgImageUrl);
+    }
+    const asset = assetsById.get(c.assetId);
+    if (asset?.kind === 'uploaded' && asset.mediaType === 'image' && asset.srcUrl) {
+      bgUrls.add(asset.srcUrl);
     }
   });
   await Promise.all(
@@ -1456,26 +1565,40 @@ export async function exportTimelineToVideo(params: {
       if (timeInClip < 0 || timeInClip > clip.duration) continue;
       const asset = assetsById.get(clip.assetId);
       if (asset?.kind === 'uploaded') {
-        const video = getOrCreateVideoElement(asset, 0, clip.speed);
-        if (video) {
-          const realDur =
-            Number.isFinite(video.duration) && video.duration > 0
-              ? video.duration
-              : asset.duration;
-          const targetT = Math.min(
-            Math.max(0, clip.sourceOffset + timeInClip * clip.speed),
-            Math.max(0.05, realDur - 0.04)
-          );
-          await seekVideoForFrame(video, targetT);
-          if (clip.bgRemovalMode === 'ai') {
+        if (asset.mediaType === 'image') {
+          const img = preloadImage(asset.srcUrl);
+          if (img && img.complete && clip.bgRemovalMode === 'ai') {
             await generateAiMaskForExport({
               clipId: clip.id,
-              video,
-              videoTime: video.currentTime,
+              video: img,
+              videoTime: 0,
               threshold: clip.bgThreshold ?? 0.5,
               softness: clip.bgEdgeSoftness ?? 0.35,
               invertMask: clip.bgInvertMask ?? false,
             });
+          }
+        } else {
+          const video = getOrCreateVideoElement(asset, 0, clip.speed);
+          if (video) {
+            const realDur =
+              Number.isFinite(video.duration) && video.duration > 0
+                ? video.duration
+                : asset.duration;
+            const targetT = Math.min(
+              Math.max(0, clip.sourceOffset + timeInClip * clip.speed),
+              Math.max(0.05, realDur - 0.04)
+            );
+            await seekVideoForFrame(video, targetT);
+            if (clip.bgRemovalMode === 'ai') {
+              await generateAiMaskForExport({
+                clipId: clip.id,
+                video,
+                videoTime: video.currentTime,
+                threshold: clip.bgThreshold ?? 0.5,
+                softness: clip.bgEdgeSoftness ?? 0.35,
+                invertMask: clip.bgInvertMask ?? false,
+              });
+            }
           }
         }
       }

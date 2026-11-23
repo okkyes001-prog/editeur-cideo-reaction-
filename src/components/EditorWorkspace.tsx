@@ -155,6 +155,41 @@ function readUploadedVideoMetadata(
   });
 }
 
+function readUploadedImageMetadata(
+  file: File,
+  fallbackDuration = 10
+): Promise<{
+  srcUrl: string;
+  duration: number;
+  width: number;
+  height: number;
+  thumbnailUrl: string;
+}> {
+  return new Promise((resolve) => {
+    const srcUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      resolve({
+        srcUrl,
+        duration: fallbackDuration,
+        width: img.naturalWidth || 1080,
+        height: img.naturalHeight || 1080,
+        thumbnailUrl: srcUrl,
+      });
+    };
+    img.onerror = () => {
+      resolve({
+        srcUrl,
+        duration: fallbackDuration,
+        width: 1080,
+        height: 1080,
+        thumbnailUrl: srcUrl,
+      });
+    };
+    img.src = srcUrl;
+  });
+}
+
 function readUploadedAudioDuration(file: File): Promise<{
   srcUrl: string;
   duration: number;
@@ -494,23 +529,51 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
   ) => {
     const file = files[0];
     if (!file) return;
+
     const isVideoFile =
       file.type.startsWith('video/') ||
       /\.(mp4|mov|webm|mkv|avi|m4v|ogv)$/i.test(file.name);
-    if (!isVideoFile) return;
-    const meta = await readUploadedVideoMetadata(file);
-    const asset: MediaAsset = {
-      id: `asset-up-${Date.now()}`,
-      name: file.name.replace(/\.[^.]+$/, ''),
-      kind: 'uploaded',
-      srcUrl: meta.srcUrl,
-      thumbnailUrl: meta.thumbnailUrl,
-      duration: meta.duration,
-      width: meta.width,
-      height: meta.height,
-    };
-    onAddAssets([asset]);
-    handleAddClipToTrack(asset, track, true);
+    const isImageFile =
+      file.type.startsWith('image/') ||
+      /\.(png|jpe?g|webp|gif|svg|avif|bmp)$/i.test(file.name);
+
+    if (!isVideoFile && !isImageFile) return;
+
+    if (isImageFile) {
+      const suggestedDur = Math.max(
+        6,
+        Math.min(60, Number(duration.toFixed(1)))
+      );
+      const meta = await readUploadedImageMetadata(file, suggestedDur);
+      const asset: MediaAsset = {
+        id: `asset-img-${Date.now()}`,
+        name: file.name.replace(/\.[^.]+$/, ''),
+        kind: 'uploaded',
+        mediaType: 'image',
+        srcUrl: meta.srcUrl,
+        thumbnailUrl: meta.thumbnailUrl,
+        duration: meta.duration,
+        width: meta.width,
+        height: meta.height,
+      };
+      onAddAssets([asset]);
+      handleAddClipToTrack(asset, track, true);
+    } else {
+      const meta = await readUploadedVideoMetadata(file);
+      const asset: MediaAsset = {
+        id: `asset-up-${Date.now()}`,
+        name: file.name.replace(/\.[^.]+$/, ''),
+        kind: 'uploaded',
+        mediaType: 'video',
+        srcUrl: meta.srcUrl,
+        thumbnailUrl: meta.thumbnailUrl,
+        duration: meta.duration,
+        width: meta.width,
+        height: meta.height,
+      };
+      onAddAssets([asset]);
+      handleAddClipToTrack(asset, track, true);
+    }
   };
 
   const handleUploadSfxFiles = async (files: FileList) => {
@@ -1052,9 +1115,15 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
               onSelect={setSelection}
               onUpdateClipGeometry={handleUpdateClip}
               onUpdateTextGeometry={handleUpdateText}
-              onDropVideoFile={(files) =>
-                handleUploadVideoForTrack(files, 'base')
-              }
+              onDropVideoFile={(files) => {
+                const f = files[0];
+                const isImg =
+                  f?.type.startsWith('image/') ||
+                  /\.(png|jpe?g|webp|gif|svg|avif|bmp)$/i.test(f?.name || '');
+                const targetTrack =
+                  project.baseClips.length > 0 || isImg ? 'overlay' : 'base';
+                handleUploadVideoForTrack(files, targetTrack);
+              }}
               onUploadVideoForTrack={handleUploadVideoForTrack}
             />
 
