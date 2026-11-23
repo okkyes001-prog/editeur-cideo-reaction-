@@ -221,9 +221,17 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               </div>
 
               <video
+                key={downloadUrl}
                 src={downloadUrl}
                 controls
                 playsInline
+                preload="auto"
+                onLoadedMetadata={(e) => {
+                  const v = e.currentTarget;
+                  if (v.currentTime === 0) {
+                    v.currentTime = 0.001;
+                  }
+                }}
                 className="w-full max-h-56 rounded-lg bg-black border border-[#262626]"
               />
 

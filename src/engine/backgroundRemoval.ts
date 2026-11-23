@@ -195,20 +195,41 @@ function computeScaledDims(sw: number, sh: number, maxDim = 256) {
   return { w, h };
 }
 
+function getSourceMediaInfo(
+  src: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement
+): { sw: number; sh: number; isReady: boolean } {
+  if (src instanceof HTMLVideoElement) {
+    return {
+      sw: src.videoWidth,
+      sh: src.videoHeight,
+      isReady: src.readyState >= 2 && src.videoWidth > 0,
+    };
+  }
+  if (src instanceof HTMLImageElement) {
+    return {
+      sw: src.naturalWidth,
+      sh: src.naturalHeight,
+      isReady: src.complete && src.naturalWidth > 0,
+    };
+  }
+  return {
+    sw: src.width,
+    sh: src.height,
+    isReady: src.width > 0 && src.height > 0,
+  };
+}
+
 function runSegmentationSync(
   inst: ImageSegmenter,
   entry: ClipMaskCacheEntry,
-  video: HTMLVideoElement | HTMLImageElement,
+  video: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
   videoTime: number,
   threshold: number,
   softness: number,
   invertMask: boolean,
   configKey: string
 ): boolean {
-  const isVideo = video instanceof HTMLVideoElement;
-  const sw = isVideo ? video.videoWidth : video.naturalWidth;
-  const sh = isVideo ? video.videoHeight : video.naturalHeight;
-  const isReady = isVideo ? video.readyState >= 2 : video.complete && video.naturalWidth > 0;
+  const { sw, sh, isReady } = getSourceMediaInfo(video);
 
   if (!sw || !sh || !isReady) {
     return false;
@@ -293,7 +314,7 @@ function runSegmentationSync(
 
 export function requestAiMaskUpdate(params: {
   clipId: string;
-  video: HTMLVideoElement | HTMLImageElement;
+  video: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement;
   videoTime: number;
   threshold?: number;
   softness?: number;
@@ -314,8 +335,7 @@ export function requestAiMaskUpdate(params: {
   const configKey = `${threshold.toFixed(2)}|${softness.toFixed(2)}|${
     invertMask ? 1 : 0
   }`;
-  const isVideo = video instanceof HTMLVideoElement;
-  const isReady = isVideo ? video.readyState >= 2 : video.complete && video.naturalWidth > 0;
+  const { isReady } = getSourceMediaInfo(video);
   const needsUpdate =
     Math.abs(videoTime - entry.lastVideoTime) >= 0.025 ||
     entry.lastConfigKey !== configKey;
@@ -358,7 +378,7 @@ export function requestAiMaskUpdate(params: {
 
 export async function generateAiMaskForExport(params: {
   clipId: string;
-  video: HTMLVideoElement | HTMLImageElement;
+  video: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement;
   videoTime: number;
   threshold?: number;
   softness?: number;
@@ -439,15 +459,12 @@ function rgbToYCbCr(r: number, g: number, b: number): [number, number, number] {
 }
 
 export function buildChromaKeyMask(
-  video: HTMLVideoElement | HTMLImageElement,
+  video: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
   keyColor = '#00FF00',
   tolerance = 0.28,
   softness = 0.3
 ): HTMLCanvasElement | null {
-  const isVideo = video instanceof HTMLVideoElement;
-  const sw = isVideo ? video.videoWidth : video.naturalWidth;
-  const sh = isVideo ? video.videoHeight : video.naturalHeight;
-  const isReady = isVideo ? video.readyState >= 2 : video.complete && video.naturalWidth > 0;
+  const { sw, sh, isReady } = getSourceMediaInfo(video);
 
   if (!sw || !sh || !isReady) {
     return null;

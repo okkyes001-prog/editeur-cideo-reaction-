@@ -12,20 +12,29 @@ import {
 } from '../types/editor';
 import { getCanvasDimensions } from '../data/presets';
 import {
+  createExportMediaSession,
   exportTimelineToVideo,
-  getOrCreateVideoElement,
-  preloadImage,
   renderFrame,
 } from './compositor';
 import { getAudioContext, getMusicBuffer, getSfxBuffer } from './soundEffects';
-import { generateAiMaskForExport } from './backgroundRemoval';
 
 const H264_CODEC_CANDIDATES = [
-  'avc1.4d002a', // Main profile, Level 4.2 (broadly hardware-accelerated)
-  'avc1.42001f', // Baseline profile, Level 3.1
+  'avc1.4d002a', // Main profile, Level 4.2
   'avc1.640028', // High profile, Level 4.0
+  'avc1.42001f', // Baseline profile, Level 3.1
   'avc1.4d001f', // Main profile, Level 3.1
 ];
+
+const HW_ACCEL_MODES: HardwareAcceleration[] = [
+  'no-preference',
+  'prefer-hardware',
+  'prefer-software',
+];
+
+interface ResolvedVideoEncoderConfig {
+  codec: string;
+  hardwareAcceleration: HardwareAcceleration;
+}
 
 /**
  * Checks if WebCodecs VideoEncoder and MP4 muxing are supported in the current environment.
@@ -39,21 +48,23 @@ export async function isWebCodecsSupported(): Promise<boolean> {
     return false;
   }
 
-  for (const codec of H264_CODEC_CANDIDATES) {
-    try {
-      const res = await VideoEncoder.isConfigSupported({
-        codec,
-        width: 1280,
-        height: 720,
-        bitrate: 4_000_000,
-        framerate: 30,
-        hardwareAcceleration: 'prefer-hardware',
-      });
-      if (res && res.supported) {
-        return true;
+  for (const hardwareAcceleration of HW_ACCEL_MODES) {
+    for (const codec of H264_CODEC_CANDIDATES) {
+      try {
+        const res = await VideoEncoder.isConfigSupported({
+          codec,
+          width: 1280,
+          height: 720,
+          bitrate: 4_000_000,
+          framerate: 30,
+          hardwareAcceleration,
+        });
+        if (res && res.supported) {
+          return true;
+        }
+      } catch {
+        // Try next candidate
       }
-    } catch {
-      // Try next codec candidate
     }
   }
 
@@ -61,49 +72,81 @@ export async function isWebCodecsSupported(): Promise<boolean> {
 }
 
 /**
- * Finds the first hardware-supported H.264 / AVC codec for the given dimensions and framerate.
+ * Probes candidate H.264 configurations by actually creating, configuring, encoding a test frame,
+ * and flushing a disposable VideoEncoder so runtime "Encoder creation error" never breaks mid-export.
  */
-async function resolveSupportedVideoCodec(
+async function resolveWorkingVideoEncoderConfig(
   width: number,
   height: number,
   bitrate: number,
   fps: number
-): Promise<string | null> {
-  if (typeof VideoEncoder === 'undefined') return null;
-
-  for (const codec of H264_CODEC_CANDIDATES) {
-    try {
-      const res = await VideoEncoder.isConfigSupported({
-        codec,
-        width,
-        height,
-        bitrate,
-        framerate: fps,
-        hardwareAcceleration: 'prefer-hardware',
-      });
-      if (res && res.supported) {
-        return codec;
-      }
-    } catch {
-      // Continue searching
-    }
+): Promise<ResolvedVideoEncoderConfig | null> {
+  if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') {
+    return null;
   }
 
-  // Fallback check without forcing prefer-hardware
-  for (const codec of H264_CODEC_CANDIDATES) {
-    try {
-      const res = await VideoEncoder.isConfigSupported({
-        codec,
-        width,
-        height,
-        bitrate,
-        framerate: fps,
-      });
-      if (res && res.supported) {
-        return codec;
+  const probeCanvas = document.createElement('canvas');
+  probeCanvas.width = width;
+  probeCanvas.height = height;
+  const probeCtx = probeCanvas.getContext('2d');
+  if (probeCtx) {
+    probeCtx.fillStyle = '#07090D';
+    probeCtx.fillRect(0, 0, width, height);
+  }
+
+  for (const hardwareAcceleration of HW_ACCEL_MODES) {
+    for (const codec of H264_CODEC_CANDIDATES) {
+      try {
+        const config: VideoEncoderConfig = {
+          codec,
+          width,
+          height,
+          bitrate,
+          framerate: fps,
+          hardwareAcceleration,
+          avc: { format: 'avc' },
+        };
+
+        const support = await VideoEncoder.isConfigSupported(config);
+        if (!support?.supported) continue;
+
+        let probeErr: Error | null = null;
+        let outputChunks = 0;
+
+        const probeEncoder = new VideoEncoder({
+          output: () => {
+            outputChunks++;
+          },
+          error: (e) => {
+            probeErr = e instanceof Error ? e : new Error(String(e));
+          },
+        });
+
+        let testFrame: VideoFrame | null = null;
+        try {
+          probeEncoder.configure(config);
+          testFrame = new VideoFrame(probeCanvas, {
+            timestamp: 0,
+            duration: Math.round((1 / fps) * 1_000_000),
+          });
+          probeEncoder.encode(testFrame, { keyFrame: true });
+          await probeEncoder.flush();
+          if (!probeErr && outputChunks > 0) {
+            return { codec, hardwareAcceleration };
+          }
+        } finally {
+          testFrame?.close();
+          try {
+            if (probeEncoder.state !== 'closed') {
+              probeEncoder.close();
+            }
+          } catch {
+            // Ignore cleanup failure
+          }
+        }
+      } catch {
+        // Continue trying next combination
       }
-    } catch {
-      // Continue searching
     }
   }
 
@@ -112,29 +155,59 @@ async function resolveSupportedVideoCodec(
 
 /**
  * Instant Offline Audio Rendering using OfflineAudioContext.
- * Renders SFX and Music timeline into an AudioBuffer in milliseconds (no real-time waiting).
+ * Renders SFX, Music, and uploaded video clip audio into a mixed AudioBuffer.
  */
 async function renderOfflineAudioMixdown(params: {
   duration: number;
   sampleRate: number;
+  baseClips: VideoClip[];
+  overlayClips: VideoClip[];
+  assetsById: Map<string, MediaAsset>;
   soundEffects: SoundEffectClip[];
   musicClips: MusicClip[];
   sfxById: Map<string, SoundEffectAsset>;
   musicById: Map<string, MusicAsset>;
 }): Promise<AudioBuffer | null> {
-  const { duration, sampleRate, soundEffects, musicClips, sfxById, musicById } =
-    params;
+  const {
+    duration,
+    sampleRate,
+    baseClips,
+    overlayClips,
+    assetsById,
+    soundEffects,
+    musicClips,
+    sfxById,
+    musicById,
+  } = params;
 
-  if (soundEffects.length === 0 && musicClips.length === 0) {
+  const audibleVideoClips = [...baseClips, ...overlayClips].filter((clip) => {
+    if (clip.volume <= 0) return false;
+    const asset = assetsById.get(clip.assetId);
+    return (
+      asset?.kind === 'uploaded' &&
+      asset.mediaType !== 'image' &&
+      Boolean(asset.srcUrl)
+    );
+  });
+
+  if (
+    soundEffects.length === 0 &&
+    musicClips.length === 0 &&
+    audibleVideoClips.length === 0
+  ) {
     return null;
   }
 
   const baseAudioCtx = getAudioContext();
+  if (baseAudioCtx.state === 'suspended') {
+    await baseAudioCtx.resume().catch(() => {});
+  }
+
   const preloadedSfx = new Map<string, AudioBuffer>();
   for (const sfx of soundEffects) {
     const asset = sfxById.get(sfx.sfxAssetId);
     if (!asset) continue;
-    const buf = await getSfxBuffer(asset, baseAudioCtx);
+    const buf = await getSfxBuffer(asset, baseAudioCtx).catch(() => null);
     if (buf) preloadedSfx.set(sfx.id, buf);
   }
 
@@ -142,16 +215,58 @@ async function renderOfflineAudioMixdown(params: {
   for (const m of musicClips) {
     const asset = musicById.get(m.musicAssetId);
     if (!asset) continue;
-    const buf = await getMusicBuffer(asset, baseAudioCtx);
+    const buf = await getMusicBuffer(asset, baseAudioCtx).catch(() => null);
     if (buf) preloadedMusic.set(m.id, buf);
   }
 
-  if (preloadedSfx.size === 0 && preloadedMusic.size === 0) {
+  const preloadedClipAudio = new Map<string, AudioBuffer>();
+  for (const clip of audibleVideoClips) {
+    const asset = assetsById.get(clip.assetId);
+    if (!asset?.srcUrl) continue;
+    try {
+      const resp = await fetch(asset.srcUrl);
+      const arr = await resp.arrayBuffer();
+      // Guard against huge files causing OOM during audio decoding
+      if (arr.byteLength > 120 * 1024 * 1024) continue;
+      const decoded = await baseAudioCtx.decodeAudioData(arr);
+      preloadedClipAudio.set(clip.id, decoded);
+    } catch {
+      // Video may have no audio track or unsupported codec — skip cleanly
+    }
+  }
+
+  if (
+    preloadedSfx.size === 0 &&
+    preloadedMusic.size === 0 &&
+    preloadedClipAudio.size === 0
+  ) {
     return null;
   }
 
   const totalSamples = Math.max(1, Math.ceil(duration * sampleRate));
   const offlineCtx = new OfflineAudioContext(2, totalSamples, sampleRate);
+
+  for (const clip of audibleVideoClips) {
+    const buf = preloadedClipAudio.get(clip.id);
+    if (!buf) continue;
+    try {
+      const src = offlineCtx.createBufferSource();
+      src.buffer = buf;
+      src.playbackRate.value = Math.max(0.25, Math.min(4, clip.speed));
+      const gain = offlineCtx.createGain();
+      gain.gain.value = Math.max(0, Math.min(1, clip.volume));
+      src.connect(gain);
+      gain.connect(offlineCtx.destination);
+      const startWhen = Math.max(0, clip.startTime);
+      const offset = Math.max(0, clip.sourceOffset);
+      const dur = Math.max(0.05, clip.duration);
+      if (offset < buf.duration) {
+        src.start(startWhen, offset, dur * src.playbackRate.value);
+      }
+    } catch {
+      // Skip invalid offsets
+    }
+  }
 
   // Mix SFX clips
   for (const sfx of soundEffects) {
@@ -190,43 +305,100 @@ async function renderOfflineAudioMixdown(params: {
 }
 
 /**
- * Fast Video Seek helper without double requestAnimationFrame delays.
+ * Encodes an AudioBuffer into AAC chunks up front so any audio encoder quirk
+ * falls back cleanly to silent MP4 rather than corrupting the muxer.
  */
-function seekVideoQuick(
-  video: HTMLVideoElement,
-  targetTime: number
-): Promise<void> {
-  return new Promise((resolve) => {
-    if (
-      Math.abs(video.currentTime - targetTime) <= 0.03 &&
-      video.readyState >= 2
-    ) {
-      resolve();
-      return;
-    }
+async function encodeAudioBufferToAacChunks(
+  audioBuffer: AudioBuffer,
+  sampleRate: number
+): Promise<Array<{ chunk: EncodedAudioChunk; meta?: EncodedAudioChunkMetadata }>> {
+  if (typeof AudioEncoder === 'undefined' || typeof AudioData === 'undefined') {
+    return [];
+  }
 
-    let settled = false;
-    const done = () => {
-      if (settled) return;
-      settled = true;
-      video.removeEventListener('seeked', done);
-      resolve();
-    };
+  const audioSup = await AudioEncoder.isConfigSupported({
+    codec: 'mp4a.40.2',
+    numberOfChannels: 2,
+    sampleRate,
+    bitrate: 128_000,
+  }).catch(() => null);
 
-    video.addEventListener('seeked', done, { once: true });
-    try {
-      video.currentTime = targetTime;
-    } catch {
-      done();
-    }
-    setTimeout(done, 90);
+  if (!audioSup?.supported) return [];
+
+  const encodedChunks: Array<{
+    chunk: EncodedAudioChunk;
+    meta?: EncodedAudioChunkMetadata;
+  }> = [];
+  let audioEncoderError: Error | null = null;
+
+  const audioEncoder = new AudioEncoder({
+    output: (chunk, meta) => {
+      encodedChunks.push({ chunk, meta });
+    },
+    error: (e) => {
+      audioEncoderError = e instanceof Error ? e : new Error(String(e));
+    },
   });
+
+  try {
+    audioEncoder.configure({
+      codec: 'mp4a.40.2',
+      numberOfChannels: 2,
+      sampleRate,
+      bitrate: 128_000,
+    });
+
+    const ch0 = audioBuffer.getChannelData(0);
+    const ch1 =
+      audioBuffer.numberOfChannels > 1 ? audioBuffer.getChannelData(1) : ch0;
+    const totalAudioSamples = audioBuffer.length;
+    const audioChunkFrames = 1024;
+
+    for (let offset = 0; offset < totalAudioSamples; offset += audioChunkFrames) {
+      if (audioEncoderError) break;
+      const count = Math.min(audioChunkFrames, totalAudioSamples - offset);
+      const interleaved = new Float32Array(count * 2);
+      for (let i = 0; i < count; i++) {
+        interleaved[i * 2] = ch0[offset + i];
+        interleaved[i * 2 + 1] = ch1[offset + i];
+      }
+
+      const audioData = new AudioData({
+        format: 'f32',
+        sampleRate,
+        numberOfFrames: count,
+        numberOfChannels: 2,
+        timestamp: Math.round((offset / sampleRate) * 1_000_000),
+        data: interleaved,
+      });
+
+      try {
+        audioEncoder.encode(audioData);
+      } finally {
+        audioData.close();
+      }
+    }
+
+    await audioEncoder.flush();
+    if (audioEncoderError) return [];
+    return encodedChunks;
+  } catch {
+    return [];
+  } finally {
+    try {
+      if (audioEncoder.state !== 'closed') {
+        audioEncoder.close();
+      }
+    } catch {
+      // Ignore
+    }
+  }
 }
 
 /**
- * High-performance CapCut-style offline video export using WebCodecs (VideoEncoder + AudioEncoder)
- * and mp4-muxer. Yields a universally compatible, hardware-accelerated MP4 file at 5x-10x real-time speed.
- * Automatically falls back to MediaRecorder if WebCodecs is unsupported on the user's browser.
+ * High-performance offline video export using WebCodecs (VideoEncoder + AudioEncoder)
+ * and mp4-muxer. Automatically falls back to MediaRecorder if WebCodecs is unsupported
+ * or encounters an encoder error.
  */
 export async function exportWithWebCodecs(params: {
   aspectRatio: AspectRatio;
@@ -261,82 +433,56 @@ export async function exportWithWebCodecs(params: {
     onProgress,
   } = params;
 
-  // Determine target canvas dimensions
   const dims = getCanvasDimensions(aspectRatio, resolution);
-  // H.264 requires dimensions to be even numbers (divisible by 2)
+  // H.264 requires even dimensions
   const evenWidth = dims.width % 2 === 0 ? dims.width : dims.width - 1;
   const evenHeight = dims.height % 2 === 0 ? dims.height : dims.height - 1;
   const targetBitrate = resolution === '1080p' ? 8_000_000 : 4_500_000;
 
-  // 1. Check WebCodecs availability
-  const selectedCodec = await resolveSupportedVideoCodec(
+  // 1. Probe WebCodecs encoder availability with an actual test encode
+  const encoderConfig = await resolveWorkingVideoEncoderConfig(
     evenWidth,
     evenHeight,
     targetBitrate,
     fps
   );
 
-  if (!selectedCodec) {
+  if (!encoderConfig) {
     console.warn(
-      'WebCodecs H.264 not supported on this platform. Falling back to MediaRecorder.'
+      'WebCodecs H.264 encoder unavailable or failed probe. Falling back to MediaRecorder.'
     );
     return exportTimelineToVideo(params);
   }
 
+  const session = createExportMediaSession(
+    [...baseClips, ...overlayClips],
+    assetsById
+  );
+
+  let videoEncoder: VideoEncoder | null = null;
+
   try {
-    // 2. Preload replacement images and static image assets
-    const bgUrls = new Set<string>();
-    [...baseClips, ...overlayClips].forEach((c) => {
-      if (c.bgReplaceMode === 'image' && c.bgImageUrl) {
-        bgUrls.add(c.bgImageUrl);
-      }
-      const asset = assetsById.get(c.assetId);
-      if (
-        asset?.kind === 'uploaded' &&
-        asset.mediaType === 'image' &&
-        asset.srcUrl
-      ) {
-        bgUrls.add(asset.srcUrl);
-      }
-    });
+    // 2. Prepare DOM-attached export media decoders & preload all images/videos
+    await session.prepare();
 
-    await Promise.all(
-      Array.from(bgUrls).map((url) => {
-        const img = preloadImage(url);
-        if (!img || img.complete) return Promise.resolve();
-        return new Promise<void>((resolve) => {
-          img.addEventListener('load', () => resolve(), { once: true });
-          img.addEventListener('error', () => resolve(), { once: true });
-          setTimeout(resolve, 1000);
-        });
-      })
-    );
-
-    // 3. Fast Offline Audio Mixdown in ~30ms
+    // 3. Offline Audio Mixdown + optional AAC pre-encode
     const sampleRate = 44100;
     const mixedAudioBuffer = await renderOfflineAudioMixdown({
       duration,
       sampleRate,
+      baseClips,
+      overlayClips,
+      assetsById,
       soundEffects,
       musicClips,
       sfxById,
       musicById,
     });
 
-    // Check if AudioEncoder (AAC) is available for audio muxing
-    let canEncodeAudio = false;
-    if (mixedAudioBuffer && typeof AudioEncoder !== 'undefined') {
-      try {
-        const audioSup = await AudioEncoder.isConfigSupported({
-          codec: 'mp4a.40.2',
-          numberOfChannels: 2,
-          sampleRate,
-        });
-        canEncodeAudio = Boolean(audioSup && audioSup.supported);
-      } catch {
-        canEncodeAudio = false;
-      }
-    }
+    const encodedAudioChunks = mixedAudioBuffer
+      ? await encodeAudioBufferToAacChunks(mixedAudioBuffer, sampleRate)
+      : [];
+    const hasAudio = encodedAudioChunks.length > 0;
 
     // 4. Initialize MP4 Muxer
     const muxerTarget = new ArrayBufferTarget();
@@ -348,7 +494,7 @@ export async function exportWithWebCodecs(params: {
         height: evenHeight,
         frameRate: fps,
       },
-      audio: canEncodeAudio
+      audio: hasAudio
         ? {
             codec: 'aac',
             numberOfChannels: 2,
@@ -359,9 +505,13 @@ export async function exportWithWebCodecs(params: {
       firstTimestampBehavior: 'offset',
     });
 
+    for (const { chunk, meta } of encodedAudioChunks) {
+      muxer.addAudioChunk(chunk, meta);
+    }
+
     // 5. Initialize WebCodecs VideoEncoder
     let videoEncoderError: Error | null = null;
-    const videoEncoder = new VideoEncoder({
+    videoEncoder = new VideoEncoder({
       output: (chunk, meta) => {
         muxer.addVideoChunk(chunk, meta);
       },
@@ -371,73 +521,16 @@ export async function exportWithWebCodecs(params: {
     });
 
     videoEncoder.configure({
-      codec: selectedCodec,
+      codec: encoderConfig.codec,
       width: evenWidth,
       height: evenHeight,
       bitrate: targetBitrate,
       framerate: fps,
-      hardwareAcceleration: 'prefer-hardware',
+      hardwareAcceleration: encoderConfig.hardwareAcceleration,
       avc: { format: 'avc' },
     });
 
-    // 6. Encode Audio Chunks via AudioEncoder if available
-    if (canEncodeAudio && mixedAudioBuffer) {
-      let audioEncoderError: Error | null = null;
-      const audioEncoder = new AudioEncoder({
-        output: (chunk, meta) => {
-          muxer.addAudioChunk(chunk, meta);
-        },
-        error: (e) => {
-          audioEncoderError = e instanceof Error ? e : new Error(String(e));
-        },
-      });
-
-      audioEncoder.configure({
-        codec: 'mp4a.40.2',
-        numberOfChannels: 2,
-        sampleRate,
-        bitrate: 128_000,
-      });
-
-      const ch0 = mixedAudioBuffer.getChannelData(0);
-      const ch1 =
-        mixedAudioBuffer.numberOfChannels > 1
-          ? mixedAudioBuffer.getChannelData(1)
-          : ch0;
-      const totalAudioSamples = mixedAudioBuffer.length;
-      const audioChunkFrames = 1024;
-
-      for (
-        let offset = 0;
-        offset < totalAudioSamples;
-        offset += audioChunkFrames
-      ) {
-        if (audioEncoderError) break;
-        const count = Math.min(audioChunkFrames, totalAudioSamples - offset);
-        const interleaved = new Float32Array(count * 2);
-        for (let i = 0; i < count; i++) {
-          interleaved[i * 2] = ch0[offset + i];
-          interleaved[i * 2 + 1] = ch1[offset + i];
-        }
-
-        const audioData = new AudioData({
-          format: 'f32',
-          sampleRate,
-          numberOfFrames: count,
-          numberOfChannels: 2,
-          timestamp: Math.round((offset / sampleRate) * 1_000_000), // in microseconds
-          data: interleaved,
-        });
-
-        audioEncoder.encode(audioData);
-        audioData.close();
-      }
-
-      await audioEncoder.flush();
-      audioEncoder.close();
-    }
-
-    // 7. Video Frame Rendering Loop
+    // 6. Video Frame Rendering Loop
     const canvas = document.createElement('canvas');
     canvas.width = evenWidth;
     canvas.height = evenHeight;
@@ -445,61 +538,15 @@ export async function exportWithWebCodecs(params: {
     if (!ctx) throw new Error('Could not acquire 2D canvas context');
 
     const totalFrames = Math.max(1, Math.ceil(duration * fps));
-    const allClips = [...baseClips, ...overlayClips];
 
     for (let frame = 0; frame < totalFrames; frame++) {
       if (videoEncoderError) throw videoEncoderError;
 
       const t = Math.min(duration, frame / fps);
 
-      // Fast seek active clips
-      for (const clip of allClips) {
-        const timeInClip = t - clip.startTime;
-        if (timeInClip < 0 || timeInClip > clip.duration) continue;
-        const asset = assetsById.get(clip.assetId);
+      // Cleanly seek and snapshot every active video clip before compositing
+      await session.prepareFrame(t);
 
-        if (asset?.kind === 'uploaded') {
-          if (asset.mediaType === 'image') {
-            const img = preloadImage(asset.srcUrl);
-            if (img && img.complete && clip.bgRemovalMode === 'ai') {
-              await generateAiMaskForExport({
-                clipId: clip.id,
-                video: img,
-                videoTime: 0,
-                threshold: clip.bgThreshold ?? 0.5,
-                softness: clip.bgEdgeSoftness ?? 0.35,
-                invertMask: clip.bgInvertMask ?? false,
-              });
-            }
-          } else {
-            const video = getOrCreateVideoElement(asset, 0, clip.speed);
-            if (video) {
-              const realDur =
-                Number.isFinite(video.duration) && video.duration > 0
-                  ? video.duration
-                  : asset.duration;
-              const targetT = Math.min(
-                Math.max(0, clip.sourceOffset + timeInClip * clip.speed),
-                Math.max(0.05, realDur - 0.04)
-              );
-              await seekVideoQuick(video, targetT);
-
-              if (clip.bgRemovalMode === 'ai') {
-                await generateAiMaskForExport({
-                  clipId: clip.id,
-                  video,
-                  videoTime: video.currentTime,
-                  threshold: clip.bgThreshold ?? 0.5,
-                  softness: clip.bgEdgeSoftness ?? 0.35,
-                  invertMask: clip.bgInvertMask ?? false,
-                });
-              }
-            }
-          }
-        }
-      }
-
-      // Draw composited frame
       renderFrame({
         ctx,
         canvasW: evenWidth,
@@ -515,10 +562,16 @@ export async function exportWithWebCodecs(params: {
         showSafeZone: false,
         selection: null,
         seamDivider,
+        exportSources: session.exportSources,
       });
 
-      // Send frame directly to hardware VideoEncoder
-      const timestampUs = Math.round((frame / fps) * 1_000_000); // microseconds
+      // Backpressure so encoder queue doesn't overflow on 1080p/60fps
+      while (videoEncoder.encodeQueueSize > 8 && !videoEncoderError) {
+        await new Promise((r) => setTimeout(r, 4));
+      }
+      if (videoEncoderError) throw videoEncoderError;
+
+      const timestampUs = Math.round((frame / fps) * 1_000_000);
       const durationUs = Math.round((1 / fps) * 1_000_000);
       const isKeyFrame = frame === 0 || frame % (fps * 2) === 0;
 
@@ -527,12 +580,14 @@ export async function exportWithWebCodecs(params: {
         duration: durationUs,
       });
 
-      videoEncoder.encode(videoFrame, { keyFrame: isKeyFrame });
-      videoFrame.close(); // Immediately free GPU texture memory
+      try {
+        videoEncoder.encode(videoFrame, { keyFrame: isKeyFrame });
+      } finally {
+        videoFrame.close();
+      }
 
       onProgress(Math.round(((frame + 1) / totalFrames) * 92));
 
-      // Yield every 6 frames to keep browser UI responsive without slowing down export
       if (frame % 6 === 0) {
         await new Promise((r) => setTimeout(r, 0));
       }
@@ -540,14 +595,19 @@ export async function exportWithWebCodecs(params: {
 
     onProgress(95);
 
-    // 8. Flush and finalize
     await videoEncoder.flush();
+    if (videoEncoderError) throw videoEncoderError;
     videoEncoder.close();
+    videoEncoder = null;
+
     muxer.finalize();
 
-    onProgress(100);
-
     const mp4Blob = new Blob([muxerTarget.buffer], { type: 'video/mp4' });
+    if (mp4Blob.size === 0) {
+      throw new Error('Muxed MP4 output buffer was empty');
+    }
+
+    onProgress(100);
     const sizeMb = (mp4Blob.size / (1024 * 1024)).toFixed(1);
 
     return {
@@ -557,6 +617,18 @@ export async function exportWithWebCodecs(params: {
     };
   } catch (err) {
     console.error('WebCodecs MP4 export encountered an error, falling back:', err);
+    session.dispose();
     return exportTimelineToVideo(params);
+  } finally {
+    if (videoEncoder) {
+      try {
+        if (videoEncoder.state !== 'closed') {
+          videoEncoder.close();
+        }
+      } catch {
+        // Ignore cleanup
+      }
+    }
+    session.dispose();
   }
 }
