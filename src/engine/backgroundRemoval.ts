@@ -380,6 +380,15 @@ export async function generateAiMaskForExport(params: {
     invertMask ? 1 : 0
   }`;
 
+  // Temporal mask reuse: Skip expensive deep inference if video time moved under 0.05s or on static images
+  if (
+    entry.lastVideoTime > -900 &&
+    Math.abs(videoTime - entry.lastVideoTime) < 0.05 &&
+    entry.lastConfigKey === configKey
+  ) {
+    return entry.maskCanvas;
+  }
+
   try {
     const inst = await preloadAiSegmenter();
     runSegmentationSync(

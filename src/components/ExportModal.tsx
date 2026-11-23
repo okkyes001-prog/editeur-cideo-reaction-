@@ -57,6 +57,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   );
   const [progress, setProgress] = useState(0);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [outputMime, setOutputMime] = useState('video/mp4');
   const [sizeLabel, setSizeLabel] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -86,6 +87,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       });
 
       setDownloadUrl(result.blobUrl);
+      setOutputMime(result.mimeType);
       setSizeLabel(result.sizeLabel);
       setStatus('done');
 
@@ -93,7 +95,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         id: `exp-${Date.now()}`,
         projectId,
         projectTitle,
-        format: 'WebM VP9',
+        format: result.mimeType.includes('mp4') ? 'MP4 H.264' : 'WebM VP9',
         resolution: `${dims.width} × ${dims.height}`,
         duration,
         fileSizeLabel: result.sizeLabel,
@@ -230,11 +232,11 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   href={downloadUrl}
                   download={`${projectTitle
                     .toLowerCase()
-                    .replace(/\s+/g, '-')}.webm`}
-                  className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-[#C8FF00] hover:bg-[#b5e600] text-[#090909] text-sm font-bold transition-colors"
+                    .replace(/\s+/g, '-')}.${outputMime.includes('mp4') ? 'mp4' : 'webm'}`}
+                  className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-[#C8FF00] hover:bg-[#b5e600] text-[#090909] text-sm font-bold transition-colors cursor-pointer"
                 >
                   <Download className="w-4 h-4" />
-                  <span>Download Video</span>
+                  <span>Download MP4</span>
                 </a>
                 <button
                   type="button"

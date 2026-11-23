@@ -1541,9 +1541,7 @@ export async function exportTimelineToVideo(params: {
         if (settled) return;
         settled = true;
         video.removeEventListener('seeked', done);
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => resolve());
-        });
+        resolve();
       };
       video.addEventListener('seeked', done, { once: true });
       try {
@@ -1551,7 +1549,7 @@ export async function exportTimelineToVideo(params: {
       } catch {
         done();
       }
-      setTimeout(done, 180);
+      setTimeout(done, 90);
     });
   };
 
