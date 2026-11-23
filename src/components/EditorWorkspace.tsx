@@ -279,6 +279,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
         ...project,
         seamDivider: { ...seamDivider, ...patch },
       });
+      setIsMobileInspectorOpen(true);
     },
     [project, seamDivider, commitProjectChange]
   );
@@ -564,6 +565,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
       commitProjectChange(next);
       setSelection({ kind: 'clip', id: newClip.id });
       setCurrentTime(startAt);
+      setIsMobileInspectorOpen(true);
     },
     [project, assetsById, commitProjectChange]
   );
@@ -708,6 +710,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
           : seamDivider.positionY,
       },
     });
+    setIsMobileInspectorOpen(true);
   };
 
   const handleToggleSeamlessBlend = () => {
@@ -837,6 +840,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
       textOverlays: [...project.textOverlays, newText],
     });
     setSelection({ kind: 'text', id: newText.id });
+    setIsMobileInspectorOpen(true);
   };
 
   const handleAddTimedCaptions = useCallback(
@@ -961,6 +965,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
       soundEffects: [...project.soundEffects, newSfx],
     });
     setSelection({ kind: 'sfx', id: newSfx.id });
+    setIsMobileInspectorOpen(true);
   };
 
   const handleAddMusicClip = (musicAsset: MusicAsset) => {
@@ -978,6 +983,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
       musicClips: [...musicClips, newMusic],
     });
     setSelection({ kind: 'music', id: newMusic.id });
+    setIsMobileInspectorOpen(true);
   };
 
   const handleApplyTransitionToSelected = (transition: TransitionType) => {
@@ -1003,6 +1009,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
           : c
       ),
     });
+    setIsMobileInspectorOpen(true);
   };
 
   const handleUpdateClip = (clipId: string, patch: Partial<VideoClip>) => {
@@ -1262,6 +1269,10 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
           canSwapTracks={
             project.baseClips.length > 0 && project.overlayClips.length > 0
           }
+          baseClips={project.baseClips}
+          overlayClips={project.overlayClips}
+          selectedClip={selectedClip}
+          isBaseSplit={isBaseSplit}
           onChangeTab={setActiveTab}
           onUploadVideoForTrack={handleUploadVideoForTrack}
           onUploadSfxFiles={handleUploadSfxFiles}
@@ -1271,6 +1282,9 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
           onApplyOverlayLayout={handleApplyOverlayLayout}
           onSwapTracks={handleSwapTracks}
           onUpdateSeamDivider={handleUpdateSeamDivider}
+          onSelectClip={(clipId) => setSelection({ kind: 'clip', id: clipId })}
+          onUpdateClip={handleUpdateClip}
+          onExpandBaseFullFrame={handleExpandBaseFullFrame}
           onAddTextOverlay={handleAddTextOverlay}
           onAddTimedCaptions={handleAddTimedCaptions}
           onGenerateSyncedCaptions={handleGenerateSyncedCaptions}
@@ -1316,7 +1330,17 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
                 className="absolute top-3 right-3 z-20 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#191919]/95 border border-[#262626] hover:border-[#C8FF00] text-[11px] font-semibold text-white shadow-lg transition-colors cursor-pointer"
               >
                 <Sliders className="w-3.5 h-3.5 text-[#C8FF00]" />
-                <span>Edit</span>
+                <span>
+                  {selectedClip
+                    ? `Edit · ${selectedClip.track === 'overlay' ? 'V2' : 'V1'}`
+                    : selectedText
+                    ? 'Edit · Text'
+                    : selectedSfx
+                    ? 'Edit · SFX'
+                    : selectedMusic
+                    ? 'Edit · Music'
+                    : 'Edit'}
+                </span>
               </button>
             )}
 
@@ -1326,12 +1350,14 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
               selectedText={selectedText}
               selectedSfx={selectedSfx}
               selectedMusic={selectedMusic}
-              seamDivider={seamDivider}
-              isBaseSplit={isBaseSplit}
+              baseClips={project.baseClips}
+              overlayClips={project.overlayClips}
+              textOverlays={project.textOverlays}
+              soundEffects={project.soundEffects}
+              musicClips={musicClips}
               isMobileOpen={isMobileInspectorOpen}
               onCloseMobile={() => setIsMobileInspectorOpen(false)}
-              onExpandBaseFullFrame={handleExpandBaseFullFrame}
-              onUpdateSeamDivider={handleUpdateSeamDivider}
+              onSelect={setSelection}
               onUpdateClip={handleUpdateClip}
               onUpdateText={handleUpdateText}
               onUpdateSfx={handleUpdateSfx}
@@ -1353,6 +1379,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
             textOverlays={project.textOverlays}
             soundEffects={project.soundEffects}
             musicClips={musicClips}
+            assetsById={assetsById}
             selection={selection}
             onTogglePlay={() => setIsPlaying((p) => !p)}
             onToggleLoop={() => setIsLooping((l) => !l)}

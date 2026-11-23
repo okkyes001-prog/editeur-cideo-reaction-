@@ -3,11 +3,14 @@ import {
   ArrowUpDown,
   Captions,
   Film,
+  ImagePlus,
   LayoutTemplate,
+  Maximize2,
   Mic,
   Music,
   Play,
   Plus,
+  Scissors,
   SeparatorHorizontal,
   Sparkles,
   Square,
@@ -18,6 +21,8 @@ import {
   X,
 } from 'lucide-react';
 import {
+  BackgroundRemovalMode,
+  ClipBackgroundMode,
   MediaAsset,
   MusicAsset,
   OverlayLayoutPreset,
@@ -25,6 +30,7 @@ import {
   SoundEffectAsset,
   TextStylePreset,
   TransitionType,
+  VideoClip,
 } from '../types/editor';
 import {
   DEFAULT_SEAM_DIVIDER,
@@ -43,8 +49,32 @@ import {
   parseSubtitleFile,
   TimedCaptionCue,
 } from '../engine/captions';
+import {
+  AiModelStatus,
+  getAiModelError,
+  getAiModelStatus,
+  preloadAiSegmenter,
+  retryAiSegmenter,
+  subscribeAiModelStatus,
+} from '../engine/backgroundRemoval';
 
-export type LeftToolTab = 'videos' | 'format' | 'text' | 'line' | 'sfx' | 'music';
+export type LeftToolTab =
+  | 'videos'
+  | 'format'
+  | 'text'
+  | 'line'
+  | 'cutout'
+  | 'sfx'
+  | 'music';
+
+const CUTOUT_SOLID_SWATCHES = ['#09090B', '#1E1B4B', '#064E3B', '#7F1D1D', '#F4F4F5'];
+const CUTOUT_GRADIENT_SWATCHES: Array<{ label: string; c1: string; c2: string }> = [
+  { label: 'Midnight', c1: '#0F172A', c2: '#4C1D95' },
+  { label: 'Cyber', c1: '#083344', c2: '#1D4ED8' },
+  { label: 'Sunset', c1: '#7C2D12', c2: '#831843' },
+  { label: 'Studio', c1: '#18181B', c2: '#3F3F46' },
+];
+const CUTOUT_CHROMA_SWATCHES = ['#00FF00', '#0055FF', '#FFFFFF'];
 
 interface LeftAssetDrawerProps {
   assets: MediaAsset[];
@@ -56,6 +86,10 @@ interface LeftAssetDrawerProps {
   activeLayout?: OverlayLayoutPreset;
   activeTransition?: TransitionType;
   canSwapTracks?: boolean;
+  baseClips?: VideoClip[];
+  overlayClips?: VideoClip[];
+  selectedClip?: VideoClip | null;
+  isBaseSplit?: boolean;
   onChangeTab: (tab: LeftToolTab) => void;
   onUploadVideoForTrack: (files: FileList, track: 'base' | 'overlay') => void;
   onUploadSfxFiles: (files: FileList) => void;
@@ -65,6 +99,9 @@ interface LeftAssetDrawerProps {
   onApplyOverlayLayout: (preset: OverlayLayoutPreset) => void;
   onSwapTracks?: () => void;
   onUpdateSeamDivider?: (patch: Partial<SeamDividerConfig>) => void;
+  onSelectClip?: (clipId: string) => void;
+  onUpdateClip?: (clipId: string, patch: Partial<VideoClip>) => void;
+  onExpandBaseFullFrame?: () => void;
   onAddTextOverlay: (presetId: TextStylePreset, customText?: string) => void;
   onAddTimedCaptions?: (
     cues: TimedCaptionCue[],
@@ -90,6 +127,10 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
   activeLayout,
   activeTransition,
   canSwapTracks = false,
+  baseClips = [],
+  overlayClips = [],
+  selectedClip = null,
+  isBaseSplit = false,
   onChangeTab,
   onUploadVideoForTrack,
   onUploadSfxFiles,
@@ -99,6 +140,9 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
   onApplyOverlayLayout,
   onSwapTracks,
   onUpdateSeamDivider,
+  onSelectClip,
+  onUpdateClip,
+  onExpandBaseFullFrame,
   onAddTextOverlay,
   onAddTimedCaptions,
   onGenerateSyncedCaptions,
@@ -109,6 +153,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
 }) => {
   const viralInputRef = useRef<HTMLInputElement>(null);
   const reactionInputRef = useRef<HTMLInputElement>(null);
+  const bgImageInputRef = useRef<HTMLInputElement>(null);
   const sfxInputRef = useRef<HTMLInputElement>(null);
   const musicInputRef = useRef<HTMLInputElement>(null);
   const subtitleInputRef = useRef<HTMLInputElement>(null);
@@ -136,9 +181,20 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
     null
   );
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [aiStatus, setAiStatus] = useState<AiModelStatus>(() =>
+    getAiModelStatus()
+  );
+  const [aiError, setAiError] = useState<string | null>(() =>
+    getAiModelError()
+  );
 
   useEffect(() => {
+    const unsubAi = subscribeAiModelStatus(() => {
+      setAiStatus(getAiModelStatus());
+      setAiError(getAiModelError());
+    });
     return () => {
+      unsubAi();
       stopPreviewAudio();
       if (voiceTimerRef.current) window.clearInterval(voiceTimerRef.current);
       micStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -305,6 +361,9 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
     }
   }, [activeTab, isTimelinePlaying, previewMusicId]);
 
+  const cutoutTargetClip =
+    selectedClip || overlayClips[0] || baseClips[0] || null;
+
   const railItems: Array<{
     id: LeftToolTab;
     label: string;
@@ -321,6 +380,11 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
       id: 'line',
       label: 'Split Line',
       icon: <SeparatorHorizontal className="w-4 h-4" />,
+    },
+    {
+      id: 'cutout',
+      label: 'Cutout',
+      icon: <Scissors className="w-4 h-4" />,
     },
     { id: 'sfx', label: 'Sound', icon: <Volume2 className="w-4 h-4" /> },
     { id: 'music', label: 'Music', icon: <Music className="w-4 h-4" /> },
@@ -361,7 +425,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
         })}
       </div>
 
-      {/* Floating Popover Drawer for Videos, Layout, Text, Split Line, Sound & Music */}
+      {/* Floating Popover Drawer for Videos, Layout, Text, Split Line, Cutout, Sound & Music */}
       {isDrawerOpen && (
       <div className="absolute top-3 left-[64px] z-40 w-[264px] max-w-[calc(100vw-76px)] max-h-[calc(100%-24px)] rounded-xl border border-[#2a2a2e] bg-[#141416]/95 backdrop-blur-md shadow-[0_20px_50px_rgba(0,0,0,0.8)] flex flex-col min-h-0 overflow-hidden">
         <div className="px-3 py-2 bg-[#1a1a1d]/90 border-b border-[#262626] flex items-center justify-between shrink-0">
@@ -374,6 +438,8 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
               ? 'Text & Captions'
               : activeTab === 'line'
               ? 'Split Line'
+              : activeTab === 'cutout'
+              ? 'Background & Cutout'
               : activeTab === 'sfx'
               ? 'Sound Effects'
               : 'Mood Music'}
@@ -881,6 +947,544 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                     </div>
                   </div>
                 </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'cutout' && (
+            <div className="space-y-3">
+              {!cutoutTargetClip || !onUpdateClip ? (
+                <div className="bg-[#090909] border border-[#262626] rounded-lg p-3 text-center space-y-2">
+                  <Scissors className="w-4 h-4 text-[#C8FF00] mx-auto" />
+                  <p className="text-[11px] text-[#888888] leading-snug">
+                    Add a video or photo first to use AI Cutout or Color Key.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => onChangeTab('videos')}
+                    className="px-2.5 py-1 rounded bg-[#C8FF00] text-[#090909] text-[10px] font-bold cursor-pointer"
+                  >
+                    Open Videos
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* Target Clip Picker */}
+                  {(overlayClips.length > 0 || baseClips.length > 0) && (
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-medium text-[#888888] block">
+                        Target Layer
+                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        {[...overlayClips, ...baseClips].map((clip) => {
+                          const isCurrent = cutoutTargetClip.id === clip.id;
+                          return (
+                            <button
+                              key={clip.id}
+                              type="button"
+                              onClick={() => onSelectClip?.(clip.id)}
+                              className={`px-2 py-1 rounded text-[10px] font-medium truncate max-w-[112px] border transition-colors cursor-pointer ${
+                                isCurrent
+                                  ? 'bg-[#191919] border-[#C8FF00] text-[#C8FF00]'
+                                  : 'bg-[#090909] border-[#262626] text-[#888888] hover:text-white'
+                              }`}
+                              title={clip.label}
+                            >
+                              {clip.track === 'overlay' ? 'V2 · ' : 'V1 · '}
+                              {clip.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Cutout Mode */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-semibold text-white">
+                        Cutout Mode
+                      </span>
+                      {(cutoutTargetClip.bgRemovalMode ?? 'none') !== 'none' && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onUpdateClip(cutoutTargetClip.id, {
+                              bgRemovalMode: 'none',
+                            })
+                          }
+                          className="text-[9px] text-[#888888] hover:text-white cursor-pointer"
+                        >
+                          Reset
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1">
+                      {(
+                        [
+                          { id: 'none', label: 'Off' },
+                          { id: 'ai', label: 'AI Cutout' },
+                          { id: 'chroma', label: 'Color Key' },
+                        ] as Array<{ id: BackgroundRemovalMode; label: string }>
+                      ).map((mode) => {
+                        const active =
+                          (cutoutTargetClip.bgRemovalMode ?? 'none') === mode.id;
+                        return (
+                          <button
+                            key={mode.id}
+                            type="button"
+                            onClick={() => {
+                              if (mode.id === 'ai') {
+                                preloadAiSegmenter().catch(() => {});
+                              }
+                              const replaceMode =
+                                cutoutTargetClip.bgReplaceMode ?? 'transparent';
+                              onUpdateClip(cutoutTargetClip.id, {
+                                bgRemovalMode: mode.id,
+                                bgReplaceMode: replaceMode,
+                                bgThreshold: cutoutTargetClip.bgThreshold ?? 0.5,
+                                bgEdgeSoftness:
+                                  cutoutTargetClip.bgEdgeSoftness ?? 0.35,
+                                chromaColor:
+                                  cutoutTargetClip.chromaColor ?? '#00FF00',
+                                chromaTolerance:
+                                  cutoutTargetClip.chromaTolerance ?? 0.28,
+                                ...(mode.id !== 'none' &&
+                                replaceMode === 'transparent'
+                                  ? { borderWidth: 0, borderRadius: 0 }
+                                  : {}),
+                              });
+                            }}
+                            className={`py-1.5 rounded text-[10px] font-medium transition-colors cursor-pointer ${
+                              active
+                                ? 'bg-[#C8FF00] text-[#090909] font-bold'
+                                : 'bg-[#090909] border border-[#262626] text-[#888888] hover:text-white'
+                            }`}
+                          >
+                            {mode.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {cutoutTargetClip.bgRemovalMode === 'ai' &&
+                    aiStatus === 'loading' && (
+                      <p className="text-[10px] text-[#C8FF00]">
+                        Loading AI cutout model...
+                      </p>
+                    )}
+
+                  {cutoutTargetClip.bgRemovalMode === 'ai' &&
+                    aiStatus === 'error' && (
+                      <div className="bg-[#090909] border border-red-500/40 rounded-md p-2 space-y-1.5">
+                        <p className="text-[10px] text-red-300 leading-snug">
+                          {aiError || 'AI model unavailable. Try Color Key.'}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => retryAiSegmenter().catch(() => {})}
+                          className="text-[10px] font-semibold text-[#C8FF00] hover:underline cursor-pointer"
+                        >
+                          Retry AI Model
+                        </button>
+                      </div>
+                    )}
+
+                  {(cutoutTargetClip.bgRemovalMode ?? 'none') !== 'none' && (
+                    <div className="space-y-3 pt-2 border-t border-[#262626]">
+                      {/* Replace Background */}
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] text-[#888888] block">
+                          Replace Background
+                        </span>
+                        <div className="grid grid-cols-5 gap-1">
+                          {(
+                            [
+                              { id: 'transparent', label: 'None' },
+                              { id: 'blur', label: 'Blur' },
+                              { id: 'solid', label: 'Color' },
+                              { id: 'gradient', label: 'Grad' },
+                              { id: 'image', label: 'Photo' },
+                            ] as Array<{
+                              id: ClipBackgroundMode;
+                              label: string;
+                            }>
+                          ).map((bg) => {
+                            const active =
+                              (cutoutTargetClip.bgReplaceMode ??
+                                'transparent') === bg.id;
+                            return (
+                              <button
+                                key={bg.id}
+                                type="button"
+                                onClick={() =>
+                                  onUpdateClip(cutoutTargetClip.id, {
+                                    bgReplaceMode: bg.id,
+                                    bgColor:
+                                      cutoutTargetClip.bgColor ?? '#0F172A',
+                                    bgSecondaryColor:
+                                      cutoutTargetClip.bgSecondaryColor ??
+                                      '#4C1D95',
+                                    ...(bg.id === 'transparent'
+                                      ? { borderWidth: 0, borderRadius: 0 }
+                                      : {}),
+                                  })
+                                }
+                                className={`py-1 rounded text-[10px] font-medium transition-colors cursor-pointer ${
+                                  active
+                                    ? 'bg-[#C8FF00] text-[#090909] font-bold'
+                                    : 'bg-[#090909] border border-[#262626] text-[#888888] hover:text-white'
+                                }`}
+                              >
+                                {bg.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {cutoutTargetClip.bgReplaceMode === 'solid' && (
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5">
+                            {CUTOUT_SOLID_SWATCHES.map((hex) => (
+                              <button
+                                key={hex}
+                                type="button"
+                                onClick={() =>
+                                  onUpdateClip(cutoutTargetClip.id, {
+                                    bgColor: hex,
+                                  })
+                                }
+                                className={`w-5 h-5 rounded border cursor-pointer ${
+                                  (
+                                    cutoutTargetClip.bgColor ?? '#09090B'
+                                  ).toLowerCase() === hex.toLowerCase()
+                                    ? 'border-[#C8FF00] scale-110'
+                                    : 'border-[#3F3F46]'
+                                }`}
+                                style={{ backgroundColor: hex }}
+                              />
+                            ))}
+                          </div>
+                          <input
+                            type="color"
+                            value={cutoutTargetClip.bgColor ?? '#09090B'}
+                            onChange={(e) =>
+                              onUpdateClip(cutoutTargetClip.id, {
+                                bgColor: e.target.value,
+                              })
+                            }
+                            className="w-7 h-6 rounded border border-[#262626] bg-transparent cursor-pointer"
+                          />
+                        </div>
+                      )}
+
+                      {cutoutTargetClip.bgReplaceMode === 'gradient' && (
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-4 gap-1">
+                            {CUTOUT_GRADIENT_SWATCHES.map((g) => (
+                              <button
+                                key={g.label}
+                                type="button"
+                                onClick={() =>
+                                  onUpdateClip(cutoutTargetClip.id, {
+                                    bgColor: g.c1,
+                                    bgSecondaryColor: g.c2,
+                                  })
+                                }
+                                title={g.label}
+                                className="h-5 rounded border border-[#262626] hover:border-[#C8FF00] cursor-pointer"
+                                style={{
+                                  background: `linear-gradient(135deg, ${g.c1}, ${g.c2})`,
+                                }}
+                              />
+                            ))}
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-[#888888]">
+                              Colors
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="color"
+                                value={cutoutTargetClip.bgColor ?? '#0F172A'}
+                                onChange={(e) =>
+                                  onUpdateClip(cutoutTargetClip.id, {
+                                    bgColor: e.target.value,
+                                  })
+                                }
+                                className="w-7 h-6 rounded border border-[#262626] bg-transparent cursor-pointer"
+                              />
+                              <input
+                                type="color"
+                                value={
+                                  cutoutTargetClip.bgSecondaryColor ?? '#4C1D95'
+                                }
+                                onChange={(e) =>
+                                  onUpdateClip(cutoutTargetClip.id, {
+                                    bgSecondaryColor: e.target.value,
+                                  })
+                                }
+                                className="w-7 h-6 rounded border border-[#262626] bg-transparent cursor-pointer"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {cutoutTargetClip.bgReplaceMode === 'image' && (
+                        <div className="space-y-1.5">
+                          <input
+                            ref={bgImageInputRef}
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              const url = URL.createObjectURL(file);
+                              onUpdateClip(cutoutTargetClip.id, {
+                                bgImageUrl: url,
+                              });
+                              e.target.value = '';
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => bgImageInputRef.current?.click()}
+                            className="w-full flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-md bg-[#090909] border border-dashed border-[#262626] hover:border-[#C8FF00] text-[11px] font-medium text-white transition-colors cursor-pointer"
+                          >
+                            <ImagePlus className="w-3.5 h-3.5 text-[#C8FF00]" />
+                            <span>
+                              {cutoutTargetClip.bgImageUrl
+                                ? 'Change Background Photo'
+                                : 'Upload Background Photo'}
+                            </span>
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Place Cutout */}
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] text-[#888888] block">
+                          Place Cutout (or drag on canvas)
+                        </span>
+                        <div className="grid grid-cols-5 gap-1">
+                          {[
+                            {
+                              label: 'Left',
+                              patch: {
+                                x: 25,
+                                y: 58,
+                                widthPct: 50,
+                                heightPct: 72,
+                                scale: 1,
+                              },
+                            },
+                            {
+                              label: 'Right',
+                              patch: {
+                                x: 75,
+                                y: 58,
+                                widthPct: 50,
+                                heightPct: 72,
+                                scale: 1,
+                              },
+                            },
+                            {
+                              label: 'Top',
+                              patch: {
+                                x: 50,
+                                y: 25,
+                                widthPct: 68,
+                                heightPct: 48,
+                                scale: 1,
+                              },
+                            },
+                            {
+                              label: 'Corner',
+                              patch: {
+                                x: 74,
+                                y: 74,
+                                widthPct: 48,
+                                heightPct: 48,
+                                scale: 1,
+                              },
+                            },
+                            {
+                              label: 'Full',
+                              patch: {
+                                x: 50,
+                                y: 50,
+                                widthPct: 100,
+                                heightPct: 100,
+                                scale: 1,
+                              },
+                            },
+                          ].map((pos) => (
+                            <button
+                              key={pos.label}
+                              type="button"
+                              onClick={() =>
+                                onUpdateClip(cutoutTargetClip.id, {
+                                  ...pos.patch,
+                                  ...(cutoutTargetClip.bgReplaceMode ===
+                                  'transparent'
+                                    ? { borderWidth: 0, borderRadius: 0 }
+                                    : {}),
+                                })
+                              }
+                              className="py-1 rounded bg-[#090909] border border-[#262626] hover:border-[#C8FF00] text-[10px] font-medium text-white transition-colors cursor-pointer"
+                            >
+                              {pos.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        {cutoutTargetClip.track === 'overlay' &&
+                          (cutoutTargetClip.bgReplaceMode ?? 'transparent') ===
+                            'transparent' &&
+                          isBaseSplit &&
+                          onExpandBaseFullFrame && (
+                            <button
+                              type="button"
+                              onClick={onExpandBaseFullFrame}
+                              className="w-full flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md bg-[#191919] hover:bg-[#262626] border border-[#262626] text-[10px] font-medium text-[#C8FF00] transition-colors cursor-pointer"
+                            >
+                              <Maximize2 className="w-3 h-3" />
+                              <span>Fill Main Video Behind</span>
+                            </button>
+                          )}
+                      </div>
+
+                      {cutoutTargetClip.bgRemovalMode === 'chroma' ? (
+                        <div className="space-y-2.5 pt-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] text-[#888888]">
+                              Key Color
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              {CUTOUT_CHROMA_SWATCHES.map((hex) => (
+                                <button
+                                  key={hex}
+                                  type="button"
+                                  onClick={() =>
+                                    onUpdateClip(cutoutTargetClip.id, {
+                                      chromaColor: hex,
+                                    })
+                                  }
+                                  className={`w-4 h-4 rounded-full border cursor-pointer ${
+                                    (
+                                      cutoutTargetClip.chromaColor ?? '#00FF00'
+                                    ).toLowerCase() === hex.toLowerCase()
+                                      ? 'border-white scale-110'
+                                      : 'border-[#3F3F46]'
+                                  }`}
+                                  style={{ backgroundColor: hex }}
+                                />
+                              ))}
+                              <input
+                                type="color"
+                                value={cutoutTargetClip.chromaColor ?? '#00FF00'}
+                                onChange={(e) =>
+                                  onUpdateClip(cutoutTargetClip.id, {
+                                    chromaColor: e.target.value,
+                                  })
+                                }
+                                className="w-6 h-5 rounded border border-[#262626] bg-transparent cursor-pointer"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="flex justify-between text-[10px] mb-1">
+                              <span className="text-[#888888]">
+                                Key Tolerance
+                              </span>
+                              <span className="font-mono-tabular text-white">
+                                {Math.round(
+                                  (cutoutTargetClip.chromaTolerance ?? 0.28) *
+                                    100
+                                )}
+                                %
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min={5}
+                              max={60}
+                              value={Math.round(
+                                (cutoutTargetClip.chromaTolerance ?? 0.28) * 100
+                              )}
+                              onChange={(e) =>
+                                onUpdateClip(cutoutTargetClip.id, {
+                                  chromaTolerance: Number(e.target.value) / 100,
+                                })
+                              }
+                              className="w-full"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="flex justify-between text-[10px] mb-1">
+                            <span className="text-[#888888]">
+                              Cutout Tightness
+                            </span>
+                            <span className="font-mono-tabular text-white">
+                              {Math.round(
+                                (cutoutTargetClip.bgThreshold ?? 0.5) * 100
+                              )}
+                              %
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min={15}
+                            max={85}
+                            value={Math.round(
+                              (cutoutTargetClip.bgThreshold ?? 0.5) * 100
+                            )}
+                            onChange={(e) =>
+                              onUpdateClip(cutoutTargetClip.id, {
+                                bgThreshold: Number(e.target.value) / 100,
+                              })
+                            }
+                            className="w-full"
+                          />
+                        </div>
+                      )}
+
+                      <div>
+                        <div className="flex justify-between text-[10px] mb-1">
+                          <span className="text-[#888888]">Edge Softness</span>
+                          <span className="font-mono-tabular text-white">
+                            {Math.round(
+                              (cutoutTargetClip.bgEdgeSoftness ?? 0.35) * 100
+                            )}
+                            %
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={Math.round(
+                            (cutoutTargetClip.bgEdgeSoftness ?? 0.35) * 100
+                          )}
+                          onChange={(e) =>
+                            onUpdateClip(cutoutTargetClip.id, {
+                              bgEdgeSoftness: Number(e.target.value) / 100,
+                            })
+                          }
+                          className="w-full"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
