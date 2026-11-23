@@ -9,6 +9,7 @@ import {
   Plus,
   SeparatorHorizontal,
   Square,
+  Trash2,
   Type,
   Upload,
   Volume2,
@@ -55,6 +56,7 @@ interface LeftAssetDrawerProps {
   onUploadSfxFiles: (files: FileList) => void;
   onUploadMusicFiles: (files: FileList) => void;
   onAddClipToTrack: (asset: MediaAsset, track: 'base' | 'overlay') => void;
+  onDeleteAsset?: (assetId: string) => void;
   onAspectRatioChange: (ratio: AspectRatio) => void;
   onApplyOverlayLayout: (preset: OverlayLayoutPreset) => void;
   onSwapTracks?: () => void;
@@ -81,6 +83,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
   onUploadSfxFiles,
   onUploadMusicFiles,
   onAddClipToTrack,
+  onDeleteAsset,
   onAspectRatioChange,
   onApplyOverlayLayout,
   onSwapTracks,
@@ -317,7 +320,7 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                         key={asset.id}
                         className="bg-[#090909] border border-[#262626] rounded-md p-1.5 space-y-1.5"
                       >
-                        <div className="relative h-12 rounded bg-[#090909] border border-[#262626] overflow-hidden flex items-center justify-center">
+                        <div className="relative h-12 rounded bg-[#090909] border border-[#262626] overflow-hidden flex items-center justify-center group">
                           {asset.thumbnailUrl ? (
                             <img
                               src={asset.thumbnailUrl}
@@ -327,6 +330,20 @@ export const LeftAssetDrawer: React.FC<LeftAssetDrawerProps> = ({
                             />
                           ) : (
                             <Film className="w-3.5 h-3.5 text-[#888888]" />
+                          )}
+                          {onDeleteAsset && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDeleteAsset(asset.id);
+                              }}
+                              title="Delete from library"
+                              aria-label={`Delete ${asset.name}`}
+                              className="absolute top-1 right-1 p-1 rounded bg-black/75 hover:bg-red-500 text-white/80 hover:text-white transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-2.5 h-2.5" />
+                            </button>
                           )}
                           <span className="absolute bottom-0.5 right-1 px-1 rounded bg-black/75 text-[9px] font-mono-tabular text-white">
                             {asset.duration.toFixed(1)}s

@@ -18,6 +18,8 @@ import {
 } from './data/presets';
 import { EditorWorkspace } from './components/EditorWorkspace';
 import { ProjectsDrawer } from './components/ProjectsDrawer';
+import { releaseMediaAsset } from './engine/compositor';
+import { clearClipMaskCache } from './engine/backgroundRemoval';
 
 export default function App() {
   const [projects, setProjects] = useState<ClipProject[]>(INITIAL_PROJECTS);
@@ -87,6 +89,28 @@ export default function App() {
     );
   };
 
+  const handleDeleteAsset = (assetId: string) => {
+    const target = assets.find((a) => a.id === assetId);
+    if (target) {
+      releaseMediaAsset(target.id, target.srcUrl, target.thumbnailUrl);
+    }
+    setAssets((prev) => prev.filter((a) => a.id !== assetId));
+    setProjects((prev) =>
+      prev.map((proj) => {
+        const removedClips = [...proj.baseClips, ...proj.overlayClips].filter(
+          (c) => c.assetId === assetId
+        );
+        if (removedClips.length === 0) return proj;
+        removedClips.forEach((c) => clearClipMaskCache(c.id));
+        return {
+          ...proj,
+          baseClips: proj.baseClips.filter((c) => c.assetId !== assetId),
+          overlayClips: proj.overlayClips.filter((c) => c.assetId !== assetId),
+        };
+      })
+    );
+  };
+
   return (
     <>
       <EditorWorkspace
@@ -100,6 +124,7 @@ export default function App() {
         onAddAssets={(newAssets) =>
           setAssets((prev) => [...newAssets, ...prev])
         }
+        onDeleteAsset={handleDeleteAsset}
         onAddSfxAssets={(newSfx) =>
           setSfxAssets((prev) => [...newSfx, ...prev])
         }

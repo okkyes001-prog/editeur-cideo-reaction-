@@ -228,6 +228,41 @@ export function pauseAllUploadedVideos(): void {
   });
 }
 
+export function releaseMediaAsset(
+  assetId: string,
+  srcUrl?: string,
+  thumbnailUrl?: string
+): void {
+  const video = mediaCache.videos.get(assetId);
+  if (video) {
+    try {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+    } catch {
+      // Ignore cleanup failure
+    }
+    mediaCache.videos.delete(assetId);
+  }
+  if (srcUrl) {
+    mediaCache.images.delete(srcUrl);
+    if (srcUrl.startsWith('blob:')) {
+      try {
+        URL.revokeObjectURL(srcUrl);
+      } catch {
+        // Ignore revoke failure
+      }
+    }
+  }
+  if (thumbnailUrl && thumbnailUrl !== srcUrl && thumbnailUrl.startsWith('blob:')) {
+    try {
+      URL.revokeObjectURL(thumbnailUrl);
+    } catch {
+      // Ignore revoke failure
+    }
+  }
+}
+
 // Easing helpers
 function easeOutCubic(t: number): number {
   return 1 - Math.pow(1 - Math.max(0, Math.min(1, t)), 3);

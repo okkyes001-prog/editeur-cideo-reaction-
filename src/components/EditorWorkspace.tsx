@@ -44,6 +44,7 @@ interface EditorWorkspaceProps {
   brandKit: BrandKit;
   onUpdateProject: (updated: ClipProject) => void;
   onAddAssets: (newAssets: MediaAsset[]) => void;
+  onDeleteAsset: (assetId: string) => void;
   onAddSfxAssets: (newSfx: SoundEffectAsset[]) => void;
   onAddMusicAssets: (newMusic: MusicAsset[]) => void;
   onExportComplete: (record: ExportRecord) => void;
@@ -218,6 +219,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
   brandKit,
   onUpdateProject,
   onAddAssets,
+  onDeleteAsset,
   onAddSfxAssets,
   onAddMusicAssets,
   onExportComplete,
@@ -1004,6 +1006,21 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
     setSelection(null);
   }, [selection, project, musicClips, commitProjectChange]);
 
+  const handleDeleteLibraryAsset = useCallback(
+    (assetId: string) => {
+      if (selection?.kind === 'clip') {
+        const activeClip =
+          project.baseClips.find((c) => c.id === selection.id) ||
+          project.overlayClips.find((c) => c.id === selection.id);
+        if (activeClip?.assetId === assetId) {
+          setSelection(null);
+        }
+      }
+      onDeleteAsset(assetId);
+    },
+    [selection, project, onDeleteAsset]
+  );
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
@@ -1078,6 +1095,7 @@ export const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({
           onUploadSfxFiles={handleUploadSfxFiles}
           onUploadMusicFiles={handleUploadMusicFiles}
           onAddClipToTrack={handleAddClipToTrack}
+          onDeleteAsset={handleDeleteLibraryAsset}
           onAspectRatioChange={(ratio) =>
             commitProjectChange({ ...project, aspectRatio: ratio })
           }

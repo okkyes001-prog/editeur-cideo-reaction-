@@ -1,5 +1,7 @@
 import React, { useRef, useState } from 'react';
 import {
+  ChevronDown,
+  ChevronUp,
   Maximize,
   Scissors,
   Trash2,
@@ -75,7 +77,37 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
   onDeleteSelected,
 }) => {
   const [pxPerSec, setPxPerSec] = useState(52);
+  const [timelineHeight, setTimelineHeight] = useState(148);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
   const trackContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleResizePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startHeight = isCollapsed ? 28 : timelineHeight;
+    setIsResizing(true);
+
+    const onMove = (ev: PointerEvent) => {
+      const deltaY = startY - ev.clientY;
+      const nextHeight = startHeight + deltaY;
+      if (nextHeight < 78) {
+        setIsCollapsed(true);
+      } else {
+        setIsCollapsed(false);
+        setTimelineHeight(Math.max(122, Math.min(340, nextHeight)));
+      }
+    };
+
+    const onUp = () => {
+      setIsResizing(false);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
 
   const totalTimelineWidth = Math.max(680, (duration + 4) * pxPerSec);
 
@@ -169,9 +201,24 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
   }
 
   return (
-    <section className="h-[148px] shrink-0 bg-[#090909] border-t border-[#262626] flex flex-col select-none">
+    <section
+      style={{ height: isCollapsed ? 32 : timelineHeight }}
+      className={`shrink-0 bg-[#090909] border-t border-[#262626] flex flex-col select-none relative ${
+        isResizing ? '' : 'transition-[height] duration-200 ease-out'
+      }`}
+    >
+      {/* Top Drag-to-Resize Handle */}
+      <div
+        onPointerDown={handleResizePointerDown}
+        onDoubleClick={() => setIsCollapsed((c) => !c)}
+        title="Drag up/down to resize timeline · Double-click to collapse"
+        className="h-1.5 w-full bg-[#141414] hover:bg-[#1f1f1f] flex items-center justify-center cursor-ns-resize shrink-0 group"
+      >
+        <div className="w-10 h-0.5 rounded-full bg-[#333333] group-hover:bg-[#C8FF00] transition-colors" />
+      </div>
+
       {/* Pro Ultra-Slim Toolbar (h-7) */}
-      <div className="h-7 px-3 bg-[#141414] border-b border-[#262626] flex items-center justify-between gap-3 shrink-0">
+      <div className="h-[26px] px-3 bg-[#141414] border-b border-[#262626] flex items-center justify-between gap-3 shrink-0">
         {/* Left: Quick Actions & Live Timecode */}
         <div className="flex items-center gap-1.5">
           <button
@@ -258,10 +305,32 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
             <Maximize className="w-2.5 h-2.5" />
             <span>FIT</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setIsCollapsed((c) => !c)}
+            title={isCollapsed ? 'Expand timeline' : 'Collapse timeline'}
+            aria-label={isCollapsed ? 'Expand timeline' : 'Collapse timeline'}
+            className={`h-5 px-1.5 rounded border text-[9px] font-mono-tabular font-medium flex items-center gap-1 transition-colors cursor-pointer ${
+              isCollapsed
+                ? 'bg-[#C8FF00] border-[#C8FF00] text-[#090909] font-bold hover:bg-[#b5e600]'
+                : 'bg-[#090909] border-[#262626] text-[#888888] hover:bg-[#191919] hover:text-[#C8FF00]'
+            }`}
+          >
+            {isCollapsed ? (
+              <>
+                <ChevronUp className="w-3 h-3" />
+                <span>Timeline</span>
+              </>
+            ) : (
+              <ChevronDown className="w-3 h-3" />
+            )}
+          </button>
         </div>
       </div>
 
       {/* Track Labels + Multi-Track Lanes */}
+      {!isCollapsed && (
       <div className="flex-1 min-h-0 flex">
         {/* Sleek Compact Track Header Sidebar (w-20) */}
         <div className="w-20 shrink-0 border-r border-[#262626] bg-[#111111] flex flex-col z-10">
@@ -672,6 +741,7 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({
           </div>
         </div>
       </div>
+      )}
     </section>
   );
 };
