@@ -107,7 +107,21 @@ export default function App() {
           setMusicAssets((prev) => [...newMusic, ...prev])
         }
         onExportComplete={(record) =>
-          setExportsList((prev) => [record, ...prev])
+          setExportsList((prev) => {
+            const next = [record, ...prev];
+            let liveBlobs = 0;
+            return next.map((item) => {
+              if (!item.downloadUrl?.startsWith('blob:')) return item;
+              liveBlobs++;
+              if (liveBlobs <= 3) return item;
+              try {
+                URL.revokeObjectURL(item.downloadUrl);
+              } catch {
+                // Ignore revoke failure
+              }
+              return { ...item, downloadUrl: undefined };
+            });
+          })
         }
         onOpenProjects={() => setShowProjectsDrawer(true)}
       />

@@ -20,6 +20,13 @@ import {
   generateAiMaskForExport,
   requestAiMaskUpdate,
 } from './backgroundRemoval';
+import {
+  ALL_FORMATS,
+  BlobSource,
+  Input,
+  VideoSample,
+  VideoSampleSink,
+} from 'mediabunny';
 
 interface MediaCache {
   images: Map<string, HTMLImageElement>;
@@ -33,8 +40,10 @@ const mediaCache: MediaCache = {
 
 let featherCanvas: HTMLCanvasElement | null = null;
 let cutoutFgCanvas: HTMLCanvasElement | null = null;
+let blurScratchCanvas: HTMLCanvasElement | null = null;
 let seamBlurCanvas: HTMLCanvasElement | null = null;
 let seamGradCanvas: HTMLCanvasElement | null = null;
+let lastSeamGradKey = '';
 
 function getOffscreenCanvas(
   ref: HTMLCanvasElement | null,
@@ -57,6 +66,38 @@ function getFeatherCanvas(w: number, h: number): HTMLCanvasElement {
 function getCutoutFgCanvas(w: number, h: number): HTMLCanvasElement {
   cutoutFgCanvas = getOffscreenCanvas(cutoutFgCanvas, w, h);
   return cutoutFgCanvas;
+}
+
+function drawBlurredCoverSource(
+  targetCtx: CanvasRenderingContext2D,
+  source: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement,
+  dx: number,
+  dy: number,
+  dw: number,
+  dh: number,
+  brightness = 0.72
+) {
+  const scale = 0.14;
+  const bw = Math.max(32, Math.min(220, Math.round(dw * scale)));
+  const bh = Math.max(32, Math.min(220, Math.round(dh * scale)));
+  blurScratchCanvas = getOffscreenCanvas(blurScratchCanvas, bw, bh);
+  const bCtx = blurScratchCanvas.getContext('2d');
+  if (!bCtx) {
+    drawCoverSource(targetCtx, source, dx, dy, dw, dh, 'cover');
+    return;
+  }
+
+  bCtx.save();
+  bCtx.clearRect(0, 0, bw, bh);
+  bCtx.filter = `blur(3.2px) brightness(${brightness})`;
+  drawCoverSource(bCtx, source, 0, 0, bw, bh, 'cover');
+  bCtx.restore();
+
+  targetCtx.save();
+  targetCtx.imageSmoothingEnabled = true;
+  targetCtx.imageSmoothingQuality = 'medium';
+  targetCtx.drawImage(blurScratchCanvas, dx, dy, dw, dh);
+  targetCtx.restore();
 }
 
 function addSmoothGradientStops(
@@ -534,9 +575,9 @@ function renderVideoClipLayer(
 
     // Optional blurred backdrop for contain mode
     if (clip.blurBackdrop && clip.fit === 'contain') {
-      targetCtx.save();
-      targetCtx.filter = 'blur(22px) brightness(0.65)';
       if (asset.kind === 'builtin' && asset.builtinScene) {
+        targetCtx.save();
+        targetCtx.filter = 'blur(18px) brightness(0.65)';
         const img = preloadImage(asset.srcUrl);
         renderBuiltinAnimatedScene(
           targetCtx,
@@ -549,10 +590,11 @@ function renderVideoClipLayer(
           mh,
           'cover'
         );
+        targetCtx.restore();
       } else if (asset.kind === 'uploaded' && asset.mediaType === 'image') {
         const img = preloadImage(asset.srcUrl);
         if (img && img.complete && img.naturalWidth > 0) {
-          drawCoverSource(targetCtx, img, mx, my, mw, mh, 'cover');
+          drawBlurredCoverSource(targetCtx, img, mx, my, mw, mh, 0.65);
         }
       } else {
         const exportSrc = isExporting ? exportSources?.get(clip.id) : undefined;
@@ -562,16 +604,15 @@ function renderVideoClipLayer(
               ? exportSrc.width > 0
               : exportSrc.readyState >= 2
           ) {
-            drawCoverSource(targetCtx, exportSrc, mx, my, mw, mh, 'cover');
+            drawBlurredCoverSource(targetCtx, exportSrc, mx, my, mw, mh, 0.65);
           }
         } else {
           const video = getOrCreateVideoElement(asset, 0, clip.speed);
           if (video && video.readyState >= 2) {
-            drawCoverSource(targetCtx, video, mx, my, mw, mh, 'cover');
+            drawBlurredCoverSource(targetCtx, video, mx, my, mw, mh, 0.65);
           }
         }
       }
-      targetCtx.restore();
     }
 
     if (asset.kind === 'builtin' && asset.builtinScene) {
@@ -595,10 +636,7 @@ function renderVideoClipLayer(
           const replaceMode = clip.bgReplaceMode ?? 'transparent';
 
           if (replaceMode === 'blur') {
-            targetCtx.save();
-            targetCtx.filter = 'blur(22px) brightness(0.88)';
-            drawCoverSource(targetCtx, img, mx, my, mw, mh, 'cover');
-            targetCtx.restore();
+            drawBlurredCoverSource(targetCtx, img, mx, my, mw, mh, 0.88);
           } else if (replaceMode === 'solid') {
             targetCtx.fillStyle = clip.bgColor || '#18181B';
             targetCtx.fillRect(ox, oy, w, h);
@@ -639,7 +677,9 @@ function renderVideoClipLayer(
                   img,
                   clip.chromaColor ?? '#00FF00',
                   clip.chromaTolerance ?? 0.28,
-                  clip.bgEdgeSoftness ?? 0.3
+                  clip.bgEdgeSoftness ?? 0.3,
+                  clip.id,
+                  'img'
                 );
 
           if (maskCanvas) {
@@ -755,10 +795,7 @@ function renderVideoClipLayer(
           const replaceMode = clip.bgReplaceMode ?? 'transparent';
 
           if (replaceMode === 'blur') {
-            targetCtx.save();
-            targetCtx.filter = 'blur(22px) brightness(0.88)';
-            drawCoverSource(targetCtx, renderSource, mx, my, mw, mh, 'cover');
-            targetCtx.restore();
+            drawBlurredCoverSource(targetCtx, renderSource, mx, my, mw, mh, 0.88);
           } else if (replaceMode === 'solid') {
             targetCtx.fillStyle = clip.bgColor || '#18181B';
             targetCtx.fillRect(ox, oy, w, h);
@@ -799,7 +836,9 @@ function renderVideoClipLayer(
                   renderSource,
                   clip.chromaColor ?? '#00FF00',
                   clip.chromaTolerance ?? 0.28,
-                  clip.bgEdgeSoftness ?? 0.3
+                  clip.bgEdgeSoftness ?? 0.3,
+                  clip.id,
+                  sourceTimeForMask.toFixed(2)
                 );
 
           if (maskCanvas) {
@@ -1167,43 +1206,57 @@ function renderSeamDividerBand(
     targetCtx.restore();
   };
 
-  // 1. Feathered Frosted Blur directly across the dividing line
+  // 1. Downscaled Feathered Frosted Blur directly across the dividing line
   if (seam.blurAmount > 0 && ctx.canvas) {
-    seamBlurCanvas = getOffscreenCanvas(seamBlurCanvas, canvasW, bandH);
+    const blurW = Math.max(32, Math.round(canvasW * 0.25));
+    const blurH = Math.max(8, Math.round(bandH * 0.25));
+    seamBlurCanvas = getOffscreenCanvas(seamBlurCanvas, blurW, blurH);
     const bCtx = seamBlurCanvas.getContext('2d');
     if (bCtx) {
-      const blurPx = Math.max(1, (seam.blurAmount / 540) * canvasW);
+      const blurPx = Math.max(0.8, (seam.blurAmount / 540) * canvasW * 0.25);
       bCtx.save();
-      bCtx.clearRect(0, 0, canvasW, bandH);
+      bCtx.clearRect(0, 0, blurW, blurH);
       bCtx.filter = `blur(${blurPx.toFixed(1)}px)`;
-      bCtx.drawImage(ctx.canvas, 0, -topY);
+      bCtx.drawImage(ctx.canvas, 0, topY, canvasW, bandH, 0, 0, blurW, blurH);
       bCtx.restore();
 
-      applyVerticalSmoothMask(bCtx, canvasW, bandH, 1);
-      ctx.drawImage(seamBlurCanvas, 0, topY);
+      applyVerticalSmoothMask(bCtx, blurW, blurH, 1);
+      ctx.save();
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(seamBlurCanvas, 0, topY, canvasW, bandH);
+      ctx.restore();
     }
   }
 
-  // 2. Smooth Multi-Color Gradation across the dividing line
+  // 2. Cached Multi-Color Gradation across the dividing line
   if (seam.opacity > 0.01) {
-    seamGradCanvas = getOffscreenCanvas(seamGradCanvas, canvasW, bandH);
-    const gCtx = seamGradCanvas.getContext('2d');
-    if (gCtx) {
-      gCtx.save();
-      gCtx.clearRect(0, 0, canvasW, bandH);
-      const grad = gCtx.createLinearGradient(0, 0, canvasW, 0);
-      grad.addColorStop(0, seam.color || '#09090B');
-      grad.addColorStop(1, seam.secondaryColor || seam.color || '#09090B');
-      gCtx.fillStyle = grad;
-      gCtx.fillRect(0, 0, canvasW, bandH);
-      gCtx.restore();
+    const gradKey = `${canvasW}|${bandH}|${seam.color || '#09090B'}|${
+      seam.secondaryColor || seam.color || '#09090B'
+    }|${seam.opacity.toFixed(3)}`;
 
-      applyVerticalSmoothMask(
-        gCtx,
-        canvasW,
-        bandH,
-        Math.max(0, Math.min(1, seam.opacity))
-      );
+    if (!seamGradCanvas || lastSeamGradKey !== gradKey) {
+      seamGradCanvas = getOffscreenCanvas(seamGradCanvas, canvasW, bandH);
+      const gCtx = seamGradCanvas.getContext('2d');
+      if (gCtx) {
+        gCtx.save();
+        gCtx.clearRect(0, 0, canvasW, bandH);
+        const grad = gCtx.createLinearGradient(0, 0, canvasW, 0);
+        grad.addColorStop(0, seam.color || '#09090B');
+        grad.addColorStop(1, seam.secondaryColor || seam.color || '#09090B');
+        gCtx.fillStyle = grad;
+        gCtx.fillRect(0, 0, canvasW, bandH);
+        gCtx.restore();
+
+        applyVerticalSmoothMask(
+          gCtx,
+          canvasW,
+          bandH,
+          Math.max(0, Math.min(1, seam.opacity))
+        );
+        lastSeamGradKey = gradKey;
+      }
+    }
+    if (seamGradCanvas) {
       ctx.drawImage(seamGradCanvas, 0, topY);
     }
   }
@@ -1445,13 +1498,32 @@ export function renderFrame(params: {
   }
 }
 
+export interface ExportMediaSessionOptions {
+  duration?: number;
+  fps?: number;
+  maxDim?: number;
+}
+
 interface ExportClipEntry {
   clip: VideoClip;
   asset: MediaAsset;
-  video: HTMLVideoElement;
   frameCanvas: HTMLCanvasElement;
   frameCtx: CanvasRenderingContext2D | null;
   hasCapturedFrame: boolean;
+  lastTargetTime: number;
+  lastAiMaskTime: number;
+  // Mediabunny sequential WebCodecs decoder path (reads packets linearly without per-frame seek/lookup)
+  mbInput?: Input;
+  mbSink?: VideoSampleSink;
+  mbIterator?: AsyncGenerator<VideoSample, void, unknown>;
+  mbCurrentSample?: VideoSample | null;
+  mbNextSample?: VideoSample | null;
+  mbStreamEnded?: boolean;
+  mbFirstTs: number;
+  mbSafeEnd: number;
+  lastSampleTimestamp: number;
+  // DOM <video> fallback path
+  video?: HTMLVideoElement;
 }
 
 export interface ExportMediaSession {
@@ -1502,10 +1574,10 @@ function waitForVideoMetadataAndFirstFrame(
 function seekExportVideoElement(
   video: HTMLVideoElement,
   targetTime: number,
-  timeoutMs = 2500
+  timeoutMs = 1500
 ): Promise<boolean> {
   return new Promise((resolve) => {
-    const isClose = Math.abs(video.currentTime - targetTime) <= 0.016;
+    const isClose = Math.abs(video.currentTime - targetTime) <= 0.012;
     if (isClose && video.readyState >= 2 && !video.seeking && video.videoWidth > 0) {
       resolve(false);
       return;
@@ -1547,37 +1619,155 @@ function seekExportVideoElement(
   });
 }
 
+function computeCappedFrameDims(
+  srcW: number,
+  srcH: number,
+  maxDim: number
+): { w: number; h: number } {
+  const safeW = Math.max(2, Math.round(srcW));
+  const safeH = Math.max(2, Math.round(srcH));
+  const longest = Math.max(safeW, safeH);
+  if (longest <= maxDim) {
+    return { w: safeW, h: safeH };
+  }
+  const scale = maxDim / longest;
+  return {
+    w: Math.max(2, Math.round(safeW * scale)),
+    h: Math.max(2, Math.round(safeH * scale)),
+  };
+}
+
 /**
- * Creates an isolated, DOM-attached export media session so Chromium/Safari/Firefox
- * never throttle offscreen video decoders or render blank/black frames during export.
+ * Creates an isolated export media session.
+ * Uses sequential hardware-accelerated WebCodecs VideoDecoder (via Mediabunny VideoSampleSink.samples)
+ * with a sliding 2-sample cursor, avoiding per-frame seeks and binary searches.
  */
 export function createExportMediaSession(
   clips: VideoClip[],
-  assetsById: Map<string, MediaAsset>
+  assetsById: Map<string, MediaAsset>,
+  options?: ExportMediaSessionOptions
 ): ExportMediaSession {
   const exportSources = new Map<string, HTMLVideoElement | HTMLCanvasElement>();
   const clipEntries: ExportClipEntry[] = [];
+  const entryByClipId = new Map<string, ExportClipEntry>();
+  const preparedStaticImageIds = new Set<string>();
+  const maxDim = Math.max(480, options?.maxDim ?? 1280);
   let hostEl: HTMLDivElement | null = null;
 
-  const snapshotEntryFrame = (entry: ExportClipEntry) => {
+  const ensureHostEl = () => {
+    if (!hostEl && typeof document !== 'undefined') {
+      hostEl = document.createElement('div');
+      hostEl.setAttribute('aria-hidden', 'true');
+      hostEl.style.cssText =
+        'position:fixed;left:-10000px;top:0;width:4px;height:4px;opacity:0.001;pointer-events:none;overflow:hidden;z-index:-1;';
+      document.body.appendChild(hostEl);
+    }
+    return hostEl;
+  };
+
+  const snapshotDomVideoFrame = (entry: ExportClipEntry) => {
     const { video, frameCanvas, frameCtx } = entry;
-    if (!frameCtx || video.readyState < 2 || video.videoWidth <= 0 || video.videoHeight <= 0) {
+    if (
+      !video ||
+      !frameCtx ||
+      video.readyState < 2 ||
+      video.videoWidth <= 0 ||
+      video.videoHeight <= 0
+    ) {
       return;
     }
-    if (
-      frameCanvas.width !== video.videoWidth ||
-      frameCanvas.height !== video.videoHeight
-    ) {
-      frameCanvas.width = video.videoWidth;
-      frameCanvas.height = video.videoHeight;
+    const { w, h } = computeCappedFrameDims(
+      video.videoWidth,
+      video.videoHeight,
+      maxDim
+    );
+    if (frameCanvas.width !== w || frameCanvas.height !== h) {
+      frameCanvas.width = w;
+      frameCanvas.height = h;
     }
-    frameCtx.drawImage(video, 0, 0, frameCanvas.width, frameCanvas.height);
+    frameCtx.drawImage(video, 0, 0, w, h);
     entry.hasCapturedFrame = true;
     exportSources.set(entry.clip.id, frameCanvas);
   };
 
+  const drawSampleToEntry = (entry: ExportClipEntry, sample: VideoSample) => {
+    const { frameCanvas, frameCtx } = entry;
+    if (!frameCtx) return;
+    if (entry.hasCapturedFrame && entry.lastSampleTimestamp === sample.timestamp) {
+      return;
+    }
+    const { w, h } = computeCappedFrameDims(
+      sample.displayWidth || entry.asset.width || 720,
+      sample.displayHeight || entry.asset.height || 1280,
+      maxDim
+    );
+    if (frameCanvas.width !== w || frameCanvas.height !== h) {
+      frameCanvas.width = w;
+      frameCanvas.height = h;
+    }
+    frameCtx.clearRect(0, 0, w, h);
+    sample.draw(frameCtx, 0, 0, w, h);
+    entry.hasCapturedFrame = true;
+    entry.lastSampleTimestamp = sample.timestamp;
+    exportSources.set(entry.clip.id, frameCanvas);
+  };
+
+  const closeMbSamples = (entry: ExportClipEntry) => {
+    try {
+      entry.mbCurrentSample?.close();
+    } catch {
+      // Ignore
+    }
+    try {
+      entry.mbNextSample?.close();
+    } catch {
+      // Ignore
+    }
+    entry.mbCurrentSample = null;
+    entry.mbNextSample = null;
+  };
+
+  const initDomVideoFallback = async (entry: ExportClipEntry) => {
+    if (entry.video) return;
+    const host = ensureHostEl();
+    const video = document.createElement('video');
+    video.src = entry.asset.srcUrl;
+    video.muted = true;
+    video.defaultMuted = true;
+    video.volume = 0;
+    video.playsInline = true;
+    video.preload = 'auto';
+    video.style.cssText = 'width:4px;height:4px;';
+    if (host) {
+      host.appendChild(video);
+    }
+    entry.video = video;
+
+    video.load();
+    await waitForVideoMetadataAndFirstFrame(video, 10000);
+
+    try {
+      await video.play();
+      video.pause();
+    } catch {
+      // Ignore autoplay skip
+    }
+
+    const realDur =
+      Number.isFinite(video.duration) && video.duration > 0
+        ? video.duration
+        : entry.asset.duration;
+    const initialT = Math.min(
+      Math.max(0, entry.clip.sourceOffset),
+      Math.max(0.02, realDur - 0.04)
+    );
+    await seekExportVideoElement(video, initialT, 1500);
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    snapshotDomVideoFrame(entry);
+    entry.lastTargetTime = initialT;
+  };
+
   const prepare = async () => {
-    // Pause any playing preview videos so they don't compete with export decoding
     pauseAllUploadedVideos();
 
     // 1. Preload replacement images and static uploaded images
@@ -1608,14 +1798,30 @@ export function createExportMediaSession(
       })
     );
 
-    // 2. Attach dedicated muted <video> elements inside a hidden DOM container
-    if (typeof document !== 'undefined') {
-      hostEl = document.createElement('div');
-      hostEl.setAttribute('aria-hidden', 'true');
-      hostEl.style.cssText =
-        'position:fixed;left:-10000px;top:0;width:4px;height:4px;opacity:0.001;pointer-events:none;overflow:hidden;z-index:-1;';
-      document.body.appendChild(hostEl);
+    // Precompute AI cutout masks for static images once before frame loop starts
+    for (const clip of clips) {
+      const asset = assetsById.get(clip.assetId);
+      if (
+        asset?.kind === 'uploaded' &&
+        asset.mediaType === 'image' &&
+        clip.bgRemovalMode === 'ai'
+      ) {
+        const img = preloadImage(asset.srcUrl);
+        if (img && img.complete && img.naturalWidth > 0) {
+          await generateAiMaskForExport({
+            clipId: clip.id,
+            video: img,
+            videoTime: 0,
+            threshold: clip.bgThreshold ?? 0.5,
+            softness: clip.bgEdgeSoftness ?? 0.35,
+            invertMask: clip.bgInvertMask ?? false,
+          });
+          preparedStaticImageIds.add(clip.id);
+        }
+      }
     }
+
+    const canUseSequentialWebCodecs = typeof VideoDecoder !== 'undefined';
 
     const videoInitPromises: Promise<void>[] = [];
 
@@ -1630,57 +1836,100 @@ export function createExportMediaSession(
         continue;
       }
 
-      const video = document.createElement('video');
-      video.src = asset.srcUrl;
-      video.muted = true;
-      video.defaultMuted = true;
-      video.volume = 0;
-      video.playsInline = true;
-      video.preload = 'auto';
-      video.style.cssText = 'width:4px;height:4px;';
-      if (hostEl) {
-        hostEl.appendChild(video);
-      }
-
+      const initDims = computeCappedFrameDims(
+        asset.width || 720,
+        asset.height || 1280,
+        maxDim
+      );
       const frameCanvas = document.createElement('canvas');
-      frameCanvas.width = asset.width || 720;
-      frameCanvas.height = asset.height || 1280;
+      frameCanvas.width = initDims.w;
+      frameCanvas.height = initDims.h;
       const frameCtx = frameCanvas.getContext('2d');
 
       const entry: ExportClipEntry = {
         clip,
         asset,
-        video,
         frameCanvas,
         frameCtx,
         hasCapturedFrame: false,
+        lastTargetTime: -1,
+        lastAiMaskTime: -999,
+        mbFirstTs: 0,
+        mbSafeEnd: Math.max(0.05, asset.duration - 0.04),
+        lastSampleTimestamp: -999,
       };
       clipEntries.push(entry);
+      entryByClipId.set(clip.id, entry);
 
       videoInitPromises.push(
         (async () => {
-          video.load();
-          await waitForVideoMetadataAndFirstFrame(video, 10000);
+          if (canUseSequentialWebCodecs) {
+            let input: Input | null = null;
+            try {
+              const resp = await fetch(asset.srcUrl);
+              const blob = await resp.blob();
+              input = new Input({
+                formats: ALL_FORMATS,
+                source: new BlobSource(blob),
+              });
+              const videoTrack = await input.getPrimaryVideoTrack();
+              if (videoTrack && (await videoTrack.canDecode())) {
+                const firstTs = await videoTrack.getFirstTimestamp();
+                const metaDur = await input
+                  .getDurationFromMetadata()
+                  .catch(() => null);
+                const trackDur =
+                  metaDur && Number.isFinite(metaDur) && metaDur > 0
+                    ? metaDur
+                    : (await videoTrack.computeDuration().catch(() => asset.duration)) ||
+                      asset.duration;
+                const safeEnd = Math.max(firstTs + 0.02, trackDur - 0.02);
 
-          // Prime hardware decoder with a brief muted play/pause so frame 0 is guaranteed decoded
-          try {
-            await video.play();
-            video.pause();
-          } catch {
-            // Ignore autoplay restriction if browser skips
+                const srcStart = Math.min(
+                  safeEnd,
+                  Math.max(firstTs, clip.sourceOffset)
+                );
+                const srcEnd = Math.min(
+                  trackDur + 0.25,
+                  srcStart + Math.max(0.1, clip.duration * clip.speed) + 0.5
+                );
+
+                const sink = new VideoSampleSink(videoTrack);
+                const iterator = sink.samples(srcStart, srcEnd, {
+                  verifyKeyPackets: false,
+                });
+
+                const first = await iterator.next();
+                const second = first.done ? null : await iterator.next();
+
+                entry.mbInput = input;
+                entry.mbSink = sink;
+                entry.mbIterator = iterator;
+                entry.mbCurrentSample = first.done ? null : first.value;
+                entry.mbNextSample =
+                  second && !second.done ? second.value : null;
+                entry.mbStreamEnded = Boolean(first.done || second?.done);
+                entry.mbFirstTs = firstTs;
+                entry.mbSafeEnd = safeEnd;
+
+                if (entry.mbCurrentSample) {
+                  drawSampleToEntry(entry, entry.mbCurrentSample);
+                }
+                return;
+              }
+            } catch {
+              // Fall back to DOM <video> decoder below
+            }
+            if (input) {
+              try {
+                input.dispose();
+              } catch {
+                // Ignore
+              }
+            }
           }
 
-          const realDur =
-            Number.isFinite(video.duration) && video.duration > 0
-              ? video.duration
-              : asset.duration;
-          const initialT = Math.min(
-            Math.max(0, clip.sourceOffset),
-            Math.max(0.02, realDur - 0.04)
-          );
-          await seekExportVideoElement(video, initialT, 2500);
-          await new Promise<void>((r) => requestAnimationFrame(() => r()));
-          snapshotEntryFrame(entry);
+          await initDomVideoFallback(entry);
         })()
       );
     }
@@ -1697,24 +1946,108 @@ export function createExportMediaSession(
       if (!asset || asset.kind !== 'uploaded') continue;
 
       if (asset.mediaType === 'image') {
-        const img = preloadImage(asset.srcUrl);
-        if (img && img.complete && clip.bgRemovalMode === 'ai') {
-          await generateAiMaskForExport({
-            clipId: clip.id,
-            video: img,
-            videoTime: 0,
-            threshold: clip.bgThreshold ?? 0.5,
-            softness: clip.bgEdgeSoftness ?? 0.35,
-            invertMask: clip.bgInvertMask ?? false,
-          });
+        if (clip.bgRemovalMode === 'ai' && !preparedStaticImageIds.has(clip.id)) {
+          const img = preloadImage(asset.srcUrl);
+          if (img && img.complete && img.naturalWidth > 0) {
+            await generateAiMaskForExport({
+              clipId: clip.id,
+              video: img,
+              videoTime: 0,
+              threshold: clip.bgThreshold ?? 0.5,
+              softness: clip.bgEdgeSoftness ?? 0.35,
+              invertMask: clip.bgInvertMask ?? false,
+            });
+            preparedStaticImageIds.add(clip.id);
+          }
         }
         continue;
       }
 
-      const entry = clipEntries.find((e) => e.clip.id === clip.id);
+      const entry = entryByClipId.get(clip.id);
       if (!entry) continue;
 
-      const { video } = entry;
+      // Fast Path: Mediabunny sequential WebCodecs sliding-window reader
+      if (entry.mbIterator && entry.mbSink) {
+        const targetT = Math.min(
+          Math.max(entry.mbFirstTs, clip.sourceOffset + timeInClip * clip.speed),
+          entry.mbSafeEnd
+        );
+
+        try {
+          while (
+            entry.mbNextSample &&
+            entry.mbNextSample.timestamp <= targetT + 0.002
+          ) {
+            try {
+              entry.mbCurrentSample?.close();
+            } catch {
+              // Ignore
+            }
+            entry.mbCurrentSample = entry.mbNextSample;
+            entry.mbNextSample = null;
+
+            if (!entry.mbStreamEnded) {
+              const res = await entry.mbIterator.next();
+              if (res.done) {
+                entry.mbStreamEnded = true;
+              } else {
+                entry.mbNextSample = res.value;
+              }
+            }
+          }
+
+          if (!entry.mbCurrentSample && !entry.hasCapturedFrame) {
+            const firstFallback = await entry.mbSink.getSample(targetT, {
+              verifyKeyPackets: false,
+            });
+            if (firstFallback) {
+              entry.mbCurrentSample = firstFallback;
+            }
+          }
+
+          if (entry.mbCurrentSample) {
+            drawSampleToEntry(entry, entry.mbCurrentSample);
+          }
+
+          if (
+            clip.bgRemovalMode === 'ai' &&
+            entry.hasCapturedFrame &&
+            Math.abs(targetT - entry.lastAiMaskTime) >= 0.045
+          ) {
+            await generateAiMaskForExport({
+              clipId: clip.id,
+              video: entry.frameCanvas,
+              videoTime: targetT,
+              threshold: clip.bgThreshold ?? 0.5,
+              softness: clip.bgEdgeSoftness ?? 0.35,
+              invertMask: clip.bgInvertMask ?? false,
+            });
+            entry.lastAiMaskTime = targetT;
+          }
+          continue;
+        } catch {
+          closeMbSamples(entry);
+          try {
+            await entry.mbIterator.return();
+          } catch {
+            // Ignore
+          }
+          try {
+            entry.mbInput?.dispose();
+          } catch {
+            // Ignore
+          }
+          entry.mbIterator = undefined;
+          entry.mbSink = undefined;
+          entry.mbInput = undefined;
+          await initDomVideoFallback(entry);
+        }
+      }
+
+      // Fallback Path: DOM <video> element
+      const video = entry.video;
+      if (!video) continue;
+
       const realDur =
         Number.isFinite(video.duration) && video.duration > 0
           ? video.duration
@@ -1724,14 +2057,27 @@ export function createExportMediaSession(
         Math.max(0.05, realDur - 0.04)
       );
 
-      const didSeek = await seekExportVideoElement(video, targetT, 2500);
+      if (
+        entry.hasCapturedFrame &&
+        Math.abs(targetT - entry.lastTargetTime) < 0.012
+      ) {
+        continue;
+      }
+
+      const didSeek = await seekExportVideoElement(video, targetT, 1500);
       if (didSeek && !entry.hasCapturedFrame) {
         await new Promise<void>((r) => requestAnimationFrame(() => r()));
       }
 
-      snapshotEntryFrame(entry);
+      if (didSeek || !entry.hasCapturedFrame) {
+        snapshotDomVideoFrame(entry);
+      }
+      entry.lastTargetTime = targetT;
 
-      if (clip.bgRemovalMode === 'ai') {
+      if (
+        clip.bgRemovalMode === 'ai' &&
+        Math.abs(targetT - entry.lastAiMaskTime) >= 0.045
+      ) {
         const maskSrc = entry.hasCapturedFrame ? entry.frameCanvas : video;
         await generateAiMaskForExport({
           clipId: clip.id,
@@ -1741,22 +2087,40 @@ export function createExportMediaSession(
           softness: clip.bgEdgeSoftness ?? 0.35,
           invertMask: clip.bgInvertMask ?? false,
         });
+        entry.lastAiMaskTime = targetT;
       }
     }
   };
 
   const dispose = () => {
     for (const entry of clipEntries) {
-      try {
-        entry.video.pause();
-        entry.video.removeAttribute('src');
-        entry.video.load();
-        entry.video.remove();
-      } catch {
-        // Ignore cleanup error
+      closeMbSamples(entry);
+      if (entry.mbIterator) {
+        entry.mbIterator.return().catch(() => {});
+        entry.mbIterator = undefined;
+      }
+      if (entry.mbInput) {
+        try {
+          entry.mbInput.dispose();
+        } catch {
+          // Ignore
+        }
+        entry.mbInput = undefined;
+      }
+      if (entry.video) {
+        try {
+          entry.video.pause();
+          entry.video.removeAttribute('src');
+          entry.video.load();
+          entry.video.remove();
+        } catch {
+          // Ignore cleanup error
+        }
       }
     }
     clipEntries.length = 0;
+    entryByClipId.clear();
+    preparedStaticImageIds.clear();
     exportSources.clear();
     if (hostEl) {
       hostEl.remove();
@@ -1814,7 +2178,12 @@ export async function exportTimelineToVideo(params: {
 
   const session = createExportMediaSession(
     [...baseClips, ...overlayClips],
-    assetsById
+    assetsById,
+    {
+      duration,
+      fps,
+      maxDim: Math.max(width, height),
+    }
   );
 
   const activeExportMusic = new Map<string, AudioBufferSourceNode>();

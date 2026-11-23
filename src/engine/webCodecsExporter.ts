@@ -1,4 +1,10 @@
-import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
+import { Muxer, StreamTarget } from 'mp4-muxer';
+import {
+  ALL_FORMATS,
+  AudioBufferSink,
+  BlobSource,
+  Input,
+} from 'mediabunny';
 import {
   AspectRatio,
   MediaAsset,
@@ -25,9 +31,10 @@ const H264_CODEC_CANDIDATES = [
   'avc1.4d001f', // Main profile, Level 3.1
 ];
 
+// Prefer hardware GPU encoder first for CapCut-level speed, falling back cleanly if unavailable
 const HW_ACCEL_MODES: HardwareAcceleration[] = [
-  'no-preference',
   'prefer-hardware',
+  'no-preference',
   'prefer-software',
 ];
 
@@ -71,6 +78,8 @@ export async function isWebCodecsSupported(): Promise<boolean> {
   return false;
 }
 
+const resolvedEncoderCache = new Map<string, ResolvedVideoEncoderConfig>();
+
 /**
  * Probes candidate H.264 configurations by actually creating, configuring, encoding a test frame,
  * and flushing a disposable VideoEncoder so runtime "Encoder creation error" never breaks mid-export.
@@ -83,6 +92,12 @@ async function resolveWorkingVideoEncoderConfig(
 ): Promise<ResolvedVideoEncoderConfig | null> {
   if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') {
     return null;
+  }
+
+  const cacheKey = `${width}x${height}@${fps}`;
+  const cached = resolvedEncoderCache.get(cacheKey);
+  if (cached) {
+    return cached;
   }
 
   const probeCanvas = document.createElement('canvas');
@@ -132,7 +147,9 @@ async function resolveWorkingVideoEncoderConfig(
           probeEncoder.encode(testFrame, { keyFrame: true });
           await probeEncoder.flush();
           if (!probeErr && outputChunks > 0) {
-            return { codec, hardwareAcceleration };
+            const resolved = { codec, hardwareAcceleration };
+            resolvedEncoderCache.set(cacheKey, resolved);
+            return resolved;
           }
         } finally {
           testFrame?.close();
@@ -151,6 +168,114 @@ async function resolveWorkingVideoEncoderConfig(
   }
 
   return null;
+}
+
+/**
+ * Stitches a single audible video clip's trimmed audio into ONE AudioBuffer via Mediabunny
+ * AudioBufferSink and schedules a single AudioBufferSourceNode on OfflineAudioContext.
+ */
+async function scheduleClipAudioWithMediabunny(
+  offlineCtx: OfflineAudioContext,
+  clip: VideoClip,
+  srcUrl: string
+): Promise<'scheduled' | 'silent' | 'unsupported'> {
+  let input: Input | null = null;
+  try {
+    const resp = await fetch(srcUrl);
+    const blob = await resp.blob();
+    input = new Input({
+      formats: ALL_FORMATS,
+      source: new BlobSource(blob),
+    });
+    const audioTrack = await input.getPrimaryAudioTrack();
+    if (!audioTrack) {
+      return 'silent';
+    }
+    if (!(await audioTrack.canDecode())) {
+      return 'unsupported';
+    }
+
+    const firstTs = await audioTrack.getFirstTimestamp();
+    const speed = Math.max(0.25, Math.min(4, clip.speed));
+    const srcStart = Math.max(firstTs, clip.sourceOffset);
+    const clipSrcDur = Math.max(0.05, clip.duration * speed);
+    const srcEnd = srcStart + clipSrcDur;
+
+    const sink = new AudioBufferSink(audioTrack);
+    let trackSampleRate = 0;
+    let numChannels = 0;
+    const chunks: Array<{ startSample: number; channels: Float32Array[] }> = [];
+    let maxEndSample = 0;
+
+    for await (const { buffer, timestamp } of sink.buffers(srcStart, srcEnd)) {
+      if (!trackSampleRate) {
+        trackSampleRate = buffer.sampleRate;
+        numChannels = Math.min(2, buffer.numberOfChannels);
+      }
+
+      const trimStartSec = Math.max(0, srcStart - timestamp);
+      const startSampleInChunk = Math.floor(trimStartSec * buffer.sampleRate);
+      if (startSampleInChunk >= buffer.length) continue;
+
+      const relSec = Math.max(0, timestamp + trimStartSec - srcStart);
+      if (relSec >= clipSrcDur) break;
+
+      const maxNeededSamples = Math.ceil((clipSrcDur - relSec) * buffer.sampleRate);
+      const available = buffer.length - startSampleInChunk;
+      const copyCount = Math.min(available, maxNeededSamples);
+      if (copyCount <= 0) continue;
+
+      const destStart = Math.max(0, Math.round(relSec * trackSampleRate));
+      const chData: Float32Array[] = [];
+      for (let c = 0; c < numChannels; c++) {
+        const srcCh = buffer.getChannelData(Math.min(c, buffer.numberOfChannels - 1));
+        chData.push(srcCh.slice(startSampleInChunk, startSampleInChunk + copyCount));
+      }
+      chunks.push({ startSample: destStart, channels: chData });
+      maxEndSample = Math.max(maxEndSample, destStart + copyCount);
+    }
+
+    if (chunks.length === 0 || maxEndSample <= 0 || !trackSampleRate) {
+      return 'silent';
+    }
+
+    const stitched = offlineCtx.createBuffer(
+      Math.max(1, numChannels),
+      maxEndSample,
+      trackSampleRate
+    );
+    for (let c = 0; c < stitched.numberOfChannels; c++) {
+      const out = stitched.getChannelData(c);
+      for (const chunk of chunks) {
+        const ch = chunk.channels[c];
+        if (ch && chunk.startSample + ch.length <= out.length) {
+          out.set(ch, chunk.startSample);
+        }
+      }
+    }
+    chunks.length = 0;
+
+    const src = offlineCtx.createBufferSource();
+    src.buffer = stitched;
+    src.playbackRate.value = speed;
+    const gain = offlineCtx.createGain();
+    gain.gain.value = Math.max(0, Math.min(1, clip.volume));
+    src.connect(gain);
+    gain.connect(offlineCtx.destination);
+    src.start(Math.max(0, clip.startTime), 0, Math.max(0.05, clip.duration));
+
+    return 'scheduled';
+  } catch {
+    return 'unsupported';
+  } finally {
+    if (input) {
+      try {
+        input.dispose();
+      } catch {
+        // Ignore
+      }
+    }
+  }
 }
 
 /**
@@ -219,52 +344,57 @@ async function renderOfflineAudioMixdown(params: {
     if (buf) preloadedMusic.set(m.id, buf);
   }
 
-  const preloadedClipAudio = new Map<string, AudioBuffer>();
+  const totalSamples = Math.max(1, Math.ceil(duration * sampleRate));
+  const offlineCtx = new OfflineAudioContext(2, totalSamples, sampleRate);
+  let hasScheduledAnyAudio = false;
+
+  const fallbackAudioByAssetId = new Map<string, AudioBuffer>();
   for (const clip of audibleVideoClips) {
     const asset = assetsById.get(clip.assetId);
     if (!asset?.srcUrl) continue;
-    try {
-      const resp = await fetch(asset.srcUrl);
-      const arr = await resp.arrayBuffer();
-      // Guard against huge files causing OOM during audio decoding
-      if (arr.byteLength > 120 * 1024 * 1024) continue;
-      const decoded = await baseAudioCtx.decodeAudioData(arr);
-      preloadedClipAudio.set(clip.id, decoded);
-    } catch {
-      // Video may have no audio track or unsupported codec — skip cleanly
+
+    const audioResult = await scheduleClipAudioWithMediabunny(
+      offlineCtx,
+      clip,
+      asset.srcUrl
+    );
+    if (audioResult === 'scheduled') {
+      hasScheduledAnyAudio = true;
+      continue;
     }
-  }
+    if (audioResult === 'silent') {
+      continue;
+    }
 
-  if (
-    preloadedSfx.size === 0 &&
-    preloadedMusic.size === 0 &&
-    preloadedClipAudio.size === 0
-  ) {
-    return null;
-  }
-
-  const totalSamples = Math.max(1, Math.ceil(duration * sampleRate));
-  const offlineCtx = new OfflineAudioContext(2, totalSamples, sampleRate);
-
-  for (const clip of audibleVideoClips) {
-    const buf = preloadedClipAudio.get(clip.id);
-    if (!buf) continue;
+    // Fallback to decodeAudioData only if Mediabunny couldn't demux/decode audio
     try {
-      const src = offlineCtx.createBufferSource();
-      src.buffer = buf;
-      src.playbackRate.value = Math.max(0.25, Math.min(4, clip.speed));
-      const gain = offlineCtx.createGain();
-      gain.gain.value = Math.max(0, Math.min(1, clip.volume));
-      src.connect(gain);
-      gain.connect(offlineCtx.destination);
-      const startWhen = Math.max(0, clip.startTime);
-      const offset = Math.max(0, clip.sourceOffset);
-      const dur = Math.max(0.05, clip.duration);
-      if (offset < buf.duration) {
-        src.start(startWhen, offset, dur * src.playbackRate.value);
+      let buf = fallbackAudioByAssetId.get(clip.assetId);
+      if (!buf) {
+        const resp = await fetch(asset.srcUrl);
+        const arr = await resp.arrayBuffer();
+        if (arr.byteLength <= 120 * 1024 * 1024) {
+          buf = await baseAudioCtx.decodeAudioData(arr);
+          fallbackAudioByAssetId.set(clip.assetId, buf);
+        }
+      }
+      if (buf) {
+        const src = offlineCtx.createBufferSource();
+        src.buffer = buf;
+        src.playbackRate.value = Math.max(0.25, Math.min(4, clip.speed));
+        const gain = offlineCtx.createGain();
+        gain.gain.value = Math.max(0, Math.min(1, clip.volume));
+        src.connect(gain);
+        gain.connect(offlineCtx.destination);
+        const startWhen = Math.max(0, clip.startTime);
+        const offset = Math.max(0, clip.sourceOffset);
+        const dur = Math.max(0.05, clip.duration);
+        if (offset < buf.duration) {
+          src.start(startWhen, offset, dur);
+          hasScheduledAnyAudio = true;
+        }
       }
     } catch {
-      // Skip invalid offsets
+      // Video has no audio track or unsupported codec
     }
   }
 
@@ -279,6 +409,7 @@ async function renderOfflineAudioMixdown(params: {
     src.connect(gain);
     gain.connect(offlineCtx.destination);
     src.start(Math.max(0, sfx.startTime));
+    hasScheduledAnyAudio = true;
   }
 
   // Mix Music clips (with looping if duration spans longer than source track)
@@ -294,6 +425,11 @@ async function renderOfflineAudioMixdown(params: {
     gain.connect(offlineCtx.destination);
     src.start(Math.max(0, m.startTime));
     src.stop(Math.max(0, m.startTime + m.duration));
+    hasScheduledAnyAudio = true;
+  }
+
+  if (!hasScheduledAnyAudio) {
+    return null;
   }
 
   try {
@@ -353,6 +489,7 @@ async function encodeAudioBufferToAacChunks(
       audioBuffer.numberOfChannels > 1 ? audioBuffer.getChannelData(1) : ch0;
     const totalAudioSamples = audioBuffer.length;
     const audioChunkFrames = 1024;
+    let lastYield = performance.now();
 
     for (let offset = 0; offset < totalAudioSamples; offset += audioChunkFrames) {
       if (audioEncoderError) break;
@@ -377,6 +514,11 @@ async function encodeAudioBufferToAacChunks(
       } finally {
         audioData.close();
       }
+
+      if (performance.now() - lastYield > 40) {
+        lastYield = performance.now();
+        await new Promise((r) => setTimeout(r, 0));
+      }
     }
 
     await audioEncoder.flush();
@@ -397,8 +539,8 @@ async function encodeAudioBufferToAacChunks(
 
 /**
  * High-performance offline video export using WebCodecs (VideoEncoder + AudioEncoder)
- * and mp4-muxer. Automatically falls back to MediaRecorder if WebCodecs is unsupported
- * or encounters an encoder error.
+ * + Mediabunny sequential VideoDecoder + mp4-muxer.
+ * Automatically falls back to MediaRecorder if WebCodecs is unsupported or fails.
  */
 export async function exportWithWebCodecs(params: {
   aspectRatio: AspectRatio;
@@ -439,6 +581,8 @@ export async function exportWithWebCodecs(params: {
   const evenHeight = dims.height % 2 === 0 ? dims.height : dims.height - 1;
   const targetBitrate = resolution === '1080p' ? 8_000_000 : 4_500_000;
 
+  onProgress(2);
+
   // 1. Probe WebCodecs encoder availability with an actual test encode
   const encoderConfig = await resolveWorkingVideoEncoderConfig(
     evenWidth,
@@ -454,20 +598,28 @@ export async function exportWithWebCodecs(params: {
     return exportTimelineToVideo(params);
   }
 
+  onProgress(4);
+
   const session = createExportMediaSession(
     [...baseClips, ...overlayClips],
-    assetsById
+    assetsById,
+    {
+      duration,
+      fps,
+      maxDim: Math.max(evenWidth, evenHeight),
+    }
   );
 
   let videoEncoder: VideoEncoder | null = null;
 
   try {
-    // 2. Prepare DOM-attached export media decoders & preload all images/videos
+    // 2. Prepare sequential decoders & preload images
     await session.prepare();
+    onProgress(7);
 
     // 3. Offline Audio Mixdown + optional AAC pre-encode
     const sampleRate = 44100;
-    const mixedAudioBuffer = await renderOfflineAudioMixdown({
+    let mixedAudioBuffer = await renderOfflineAudioMixdown({
       duration,
       sampleRate,
       baseClips,
@@ -482,10 +634,20 @@ export async function exportWithWebCodecs(params: {
     const encodedAudioChunks = mixedAudioBuffer
       ? await encodeAudioBufferToAacChunks(mixedAudioBuffer, sampleRate)
       : [];
+    // Release uncompressed Float32 AudioBuffer before allocating video encoding buffers
+    mixedAudioBuffer = null;
     const hasAudio = encodedAudioChunks.length > 0;
+    onProgress(10);
 
-    // 4. Initialize MP4 Muxer
-    const muxerTarget = new ArrayBufferTarget();
+    // 4. Initialize MP4 Muxer using StreamTarget to avoid contiguous ArrayBuffer duplication in RAM
+    const mp4Parts: Array<{ position: number; data: Uint8Array<ArrayBuffer> }> = [];
+    const muxerTarget = new StreamTarget({
+      onData: (data, position) => {
+        const copy = new Uint8Array(data.byteLength);
+        copy.set(data);
+        mp4Parts.push({ position, data: copy });
+      },
+    });
     const muxer = new Muxer({
       target: muxerTarget,
       video: {
@@ -538,13 +700,14 @@ export async function exportWithWebCodecs(params: {
     if (!ctx) throw new Error('Could not acquire 2D canvas context');
 
     const totalFrames = Math.max(1, Math.ceil(duration * fps));
+    let lastUiYield = performance.now();
 
     for (let frame = 0; frame < totalFrames; frame++) {
       if (videoEncoderError) throw videoEncoderError;
 
       const t = Math.min(duration, frame / fps);
 
-      // Cleanly seek and snapshot every active video clip before compositing
+      // Decode next sequential frame (Mediabunny VideoSampleSink) or fallback seek
       await session.prepareFrame(t);
 
       renderFrame({
@@ -565,9 +728,9 @@ export async function exportWithWebCodecs(params: {
         exportSources: session.exportSources,
       });
 
-      // Backpressure so encoder queue doesn't overflow on 1080p/60fps
-      while (videoEncoder.encodeQueueSize > 8 && !videoEncoderError) {
-        await new Promise((r) => setTimeout(r, 4));
+      // Keep GPU pipeline fed while applying gentle backpressure
+      while (videoEncoder.encodeQueueSize > 12 && !videoEncoderError) {
+        await new Promise((r) => setTimeout(r, 2));
       }
       if (videoEncoderError) throw videoEncoderError;
 
@@ -586,9 +749,10 @@ export async function exportWithWebCodecs(params: {
         videoFrame.close();
       }
 
-      onProgress(Math.round(((frame + 1) / totalFrames) * 92));
+      onProgress(10 + Math.round(((frame + 1) / totalFrames) * 84));
 
-      if (frame % 6 === 0) {
+      if (performance.now() - lastUiYield > 35) {
+        lastUiYield = performance.now();
         await new Promise((r) => setTimeout(r, 0));
       }
     }
@@ -601,8 +765,15 @@ export async function exportWithWebCodecs(params: {
     videoEncoder = null;
 
     muxer.finalize();
+    encodedAudioChunks.length = 0;
 
-    const mp4Blob = new Blob([muxerTarget.buffer], { type: 'video/mp4' });
+    mp4Parts.sort((a, b) => a.position - b.position);
+    const mp4Blob = new Blob(
+      mp4Parts.map((part) => part.data),
+      { type: 'video/mp4' }
+    );
+    mp4Parts.length = 0;
+
     if (mp4Blob.size === 0) {
       throw new Error('Muxed MP4 output buffer was empty');
     }

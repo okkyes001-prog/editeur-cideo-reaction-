@@ -432,6 +432,13 @@ let chromaWorkCanvas: HTMLCanvasElement | null = null;
 let chromaMaskCanvas: HTMLCanvasElement | null = null;
 let chromaMaskImageData: ImageData | null = null;
 
+interface CachedChromaEntry {
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
+  configKey: string;
+}
+const chromaKeyCache = new Map<string, CachedChromaEntry>();
+
 function hexToRgb(hex: string): [number, number, number] {
   const clean = hex.replace('#', '');
   if (clean.length === 3) {
@@ -462,12 +469,25 @@ export function buildChromaKeyMask(
   video: HTMLVideoElement | HTMLImageElement | HTMLCanvasElement,
   keyColor = '#00FF00',
   tolerance = 0.28,
-  softness = 0.3
+  softness = 0.3,
+  cacheKey?: string,
+  frameKey?: string
 ): HTMLCanvasElement | null {
   const { sw, sh, isReady } = getSourceMediaInfo(video);
 
   if (!sw || !sh || !isReady) {
     return null;
+  }
+
+  const fullConfigKey = cacheKey
+    ? `${keyColor}|${tolerance.toFixed(3)}|${softness.toFixed(3)}|${frameKey ?? ''}|${sw}x${sh}`
+    : '';
+
+  if (cacheKey) {
+    const cached = chromaKeyCache.get(cacheKey);
+    if (cached && cached.configKey === fullConfigKey) {
+      return cached.canvas;
+    }
   }
 
   const { w, h } = computeScaledDims(sw, sh, 320);
@@ -530,5 +550,32 @@ export function buildChromaKeyMask(
   }
 
   mCtx.putImageData(chromaMaskImageData, 0, 0);
+
+  if (cacheKey) {
+    let entry = chromaKeyCache.get(cacheKey);
+    if (!entry) {
+      if (chromaKeyCache.size >= 24) {
+        const firstKey = chromaKeyCache.keys().next().value;
+        if (firstKey !== undefined) chromaKeyCache.delete(firstKey);
+      }
+      const c = document.createElement('canvas');
+      const ctx = c.getContext('2d');
+      if (ctx) {
+        entry = { canvas: c, ctx, configKey: '' };
+        chromaKeyCache.set(cacheKey, entry);
+      }
+    }
+    if (entry) {
+      if (entry.canvas.width !== w || entry.canvas.height !== h) {
+        entry.canvas.width = w;
+        entry.canvas.height = h;
+      }
+      entry.ctx.clearRect(0, 0, w, h);
+      entry.ctx.drawImage(chromaMaskCanvas, 0, 0);
+      entry.configKey = fullConfigKey;
+      return entry.canvas;
+    }
+  }
+
   return chromaMaskCanvas;
 }
